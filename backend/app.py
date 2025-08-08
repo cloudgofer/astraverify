@@ -163,9 +163,9 @@ def get_dmarc_details(domain):
         }
 
 def get_dkim_details(domain):
-    """Get DKIM record information (basic check)"""
+    """Get DKIM record information (comprehensive check)"""
     # Common DKIM selectors to check
-    common_selectors = ['default', 'google', 'k1', 'selector1', 'selector2']
+    common_selectors = ['default', 'google', 'k1', 'selector1', 'selector2', 'dreamhost', 'mailgun', 'sendgrid', 'zoho', 'yahoo']
     dkim_records = []
     
     for selector in common_selectors:
@@ -231,6 +231,8 @@ def detect_email_provider(mx_result, spf_result, dkim_result):
         provider = "Mailgun"
     elif any('sendgrid' in r['server'].lower() for r in mx_result['records']):
         provider = "SendGrid"
+    elif any(r['selector'] == 'dreamhost' for r in dkim_result['records']):
+        provider = "DreamHost"
     
     return provider
 
