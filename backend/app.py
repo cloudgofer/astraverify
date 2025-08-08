@@ -361,6 +361,19 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         msg['To'] = to_email
         msg['Subject'] = f'AstraVerify Security Report for {domain}'
         
+        # Get score and grade
+        score = analysis_result.get('security_score', {}).get('score', 0)
+        grade = get_score_grade(score)
+        
+        # Get component details
+        mx = analysis_result.get('mx', {})
+        spf = analysis_result.get('spf', {})
+        dkim = analysis_result.get('dkim', {})
+        dmarc = analysis_result.get('dmarc', {})
+        
+        # Get scoring details
+        scoring_details = analysis_result.get('security_score', {}).get('scoring_details', {})
+        
         # Create HTML content
         html_content = f"""
         <html>
@@ -369,63 +382,134 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
                 body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
                 .container {{ max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
                 .header {{ text-align: center; margin-bottom: 30px; }}
-                .logo {{ font-size: 24px; font-weight: bold; color: #667eea; margin-bottom: 10px; }}
-                .score {{ font-size: 48px; font-weight: bold; color: #4CAF50; margin: 20px 0; }}
-                .grade {{ font-size: 24px; color: #666; margin-bottom: 20px; }}
-                .section {{ margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 5px; }}
-                .section h3 {{ margin: 0 0 10px 0; color: #333; }}
+                .domain {{ font-size: 24px; font-weight: bold; color: #333; margin: 20px 0; }}
+                .score-section {{ text-align: center; margin: 30px 0; }}
+                .score {{ font-size: 36px; font-weight: bold; color: #333; }}
+                .grade {{ font-size: 18px; color: #666; margin: 10px 0; }}
+                .component {{ margin: 20px 0; padding: 15px; border-radius: 5px; }}
+                .component.valid {{ background: #d4edda; border-left: 4px solid #28a745; }}
+                .component.invalid {{ background: #f8d7da; border-left: 4px solid #dc3545; }}
+                .component h3 {{ margin: 0 0 10px 0; color: #333; }}
+                .status {{ font-weight: bold; margin: 5px 0; }}
+                .status.valid {{ color: #28a745; }}
+                .status.invalid {{ color: #dc3545; }}
+                .score-detail {{ margin: 5px 0; }}
+                .description {{ margin: 10px 0; color: #666; }}
+                .issues-section {{ margin: 30px 0; }}
+                .recommendations-section {{ margin: 30px 0; }}
                 .issue {{ margin: 10px 0; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; }}
-                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; }}
+                .recommendation {{ margin: 10px 0; padding: 10px; background: #d1ecf1; border-left: 4px solid #17a2b8; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; text-align: center; }}
             </style>
         </head>
         <body>
             <div class="container">
                 <div class="header">
-                    <div class="logo">AstraVerify</div>
-                    <h1>Security Analysis Report</h1>
-                    <p>Domain: <strong>{domain}</strong></p>
+                    <h1>🛡️ Domain Security Analysis</h1>
+                    <div class="domain">{domain}</div>
                 </div>
                 
-                <div style="text-align: center;">
-                    <div class="score">{analysis_result.get('security_score', {}).get('score', 0)}</div>
-                    <div class="grade">out of 100</div>
-                    <p>Security Grade: <strong>{get_score_grade(analysis_result.get('security_score', {}).get('score', 0))}</strong></p>
+                <div class="score-section">
+                    <div class="score">{grade}</div>
+                    <div class="grade">{score}/100 - {get_security_status(score)}</div>
                 </div>
                 
-                <div class="section">
-                    <h3>Analysis Summary</h3>
-                    <p><strong>Email Provider:</strong> {analysis_result.get('email_provider', 'Unknown')}</p>
-                    <p><strong>Analysis Date:</strong> {analysis_result.get('analysis_timestamp', 'Unknown')}</p>
+                <div class="component {'valid' if mx.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if mx.get('enabled') else '❌'} MX Records</h3>
+                    <div class="status {'valid' if mx.get('enabled') else 'invalid'}">
+                        Status: {mx.get('status', 'Unknown')}
+                    </div>
+                    <div class="score-detail">
+                        Score: {scoring_details.get('mx_base', 0)}/20
+                    </div>
+                    <div class="description">
+                        {mx.get('description', '')}
+                    </div>
                 </div>
                 
-                <div class="section">
-                    <h3>Security Components</h3>
-                    <p><strong>MX Records:</strong> {'✅ Configured' if analysis_result.get('mx', {}).get('enabled') else '❌ Missing'}</p>
-                    <p><strong>SPF Records:</strong> {'✅ Configured' if analysis_result.get('spf', {}).get('enabled') else '❌ Missing'}</p>
-                    <p><strong>DMARC Records:</strong> {'✅ Configured' if analysis_result.get('dmarc', {}).get('enabled') else '❌ Missing'}</p>
-                    <p><strong>DKIM Records:</strong> {'✅ Configured' if analysis_result.get('dkim', {}).get('enabled') else '❌ Missing'}</p>
+                <div class="component {'valid' if spf.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if spf.get('enabled') else '❌'} SPF Record</h3>
+                    <div class="status {'valid' if spf.get('enabled') else 'invalid'}">
+                        Status: {spf.get('status', 'Unknown')}
+                    </div>
+                    <div class="score-detail">
+                        Score: {scoring_details.get('spf_base', 0)}/25
+                    </div>
+                    <div class="description">
+                        {spf.get('description', '')}
+                    </div>
+                </div>
+                
+                <div class="component {'valid' if dkim.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if dkim.get('enabled') else '❌'} DKIM Record</h3>
+                    <div class="status {'valid' if dkim.get('enabled') else 'invalid'}">
+                        Status: {dkim.get('status', 'Unknown')}
+                    </div>
+                    <div class="score-detail">
+                        Score: {scoring_details.get('dkim_base', 0)}/25
+                    </div>
+                    <div class="description">
+                        {dkim.get('description', '')}
+                    </div>
+                </div>
+                
+                <div class="component {'valid' if dmarc.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if dmarc.get('enabled') else '❌'} DMARC Record</h3>
+                    <div class="status {'valid' if dmarc.get('enabled') else 'invalid'}">
+                        Status: {dmarc.get('status', 'Unknown')}
+                    </div>
+                    <div class="score-detail">
+                        Score: {scoring_details.get('dmarc_base', 0)}/30
+                    </div>
+                    <div class="description">
+                        {dmarc.get('description', '')}
+                    </div>
                 </div>
         """
         
-        # Add security issues if any
+        # Add issues section if there are problems
+        issues = []
+        if not dkim.get('enabled'):
+            issues.append("No DKIM records found - emails may be marked as spam")
+        if not dmarc.get('enabled'):
+            issues.append("No DMARC record found - email authentication not enforced")
+        
+        if issues:
+            html_content += """
+                <div class="issues-section">
+                    <h3>🔍 Issues Found</h3>
+            """
+            for issue in issues:
+                html_content += f"""
+                    <div class="issue">
+                        {issue}
+                    </div>
+                """
+            html_content += "</div>"
+        
+        # Add recommendations section
         if analysis_result.get('recommendations'):
             html_content += """
-                <div class="section">
-                    <h3>Security Recommendations</h3>
+                <div class="recommendations-section">
+                    <h3>💡 Recommendations</h3>
             """
             for rec in analysis_result.get('recommendations', []):
                 html_content += f"""
-                    <div class="issue">
+                    <div class="recommendation">
                         <strong>{rec.get('title', '')}</strong><br>
                         {rec.get('description', '')}
                     </div>
                 """
             html_content += "</div>"
         
+        # Add footer with current date
+        from datetime import datetime
+        current_date = datetime.now().strftime("%B %d, %Y")
+        
         html_content += f"""
                 <div class="footer">
-                    <p>This report was generated by AstraVerify - Email Domain Security Analysis Tool</p>
-                    <p>For questions or support, contact: {EMAIL_SENDER}</p>
+                    <p>Report generated on {current_date}</p>
+                    <p>Generated by AstraVerify - Email Domain Security Analysis Tool</p>
                 </div>
             </div>
         </body>
@@ -487,6 +571,19 @@ def get_score_grade(score):
     if score >= 45: return 'D'
     if score >= 40: return 'D-'
     return 'F'
+
+def get_security_status(score):
+    """Get security status based on score"""
+    if score >= 90:
+        return "Excellent Security"
+    elif score >= 80:
+        return "Good Security"
+    elif score >= 70:
+        return "Fair Security"
+    elif score >= 60:
+        return "Poor Security"
+    else:
+        return "Poor Security"
 
 @app.route('/api/check', methods=['GET'])
 def check_domain():
