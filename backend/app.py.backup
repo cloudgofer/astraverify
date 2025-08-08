@@ -1,0 +1,286 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import dns.resolver
+import logging
+import re
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+def get_mx_details(domain):
+    """Get detailed MX record information"""
+    try:
+        mx_records = dns.resolver.resolve(domain, 'MX')
+        records = []
+        for mx in mx_records:
+            records.append({
+                'priority': mx.preference,
+                'server': str(mx.exchange),
+                'valid': True
+            })
+        return {
+            'has_mx': True,
+            'records': records,
+            'status': 'Valid',
+            'description': f'Found {len(records)} MX record(s)'
+        }
+    except Exception as e:
+        logger.warning(f"MX check failed for {domain}: {str(e)}")
+        return {
+            'has_mx': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No MX records found'
+        }
+
+def get_spf_details(domain):
+    """Get detailed SPF record information"""
+    try:
+        txt_records = dns.resolver.resolve(domain, 'TXT')
+        spf_records = []
+        for record in txt_records:
+            record_text = record.to_text().strip('"')
+            if record_text.startswith('v=spf1'):
+                spf_records.append({
+                    'record': record_text,
+                    'valid': True
+                })
+        
+        if spf_records:
+            return {
+                'has_spf': True,
+                'records': spf_records,
+                'status': 'Valid',
+                'description': f'Found {len(spf_records)} SPF record(s)'
+            }
+        else:
+            return {
+                'has_spf': False,
+                'records': [],
+                'status': 'Missing',
+                'description': 'No SPF records found'
+            }
+    except Exception as e:
+        logger.warning(f"SPF check failed for {domain}: {str(e)}")
+        return {
+            'has_spf': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No SPF records found'
+        }
+
+def get_dmarc_details(domain):
+    """Get detailed DMARC record information"""
+    try:
+        dmarc_records = dns.resolver.resolve(f"_dmarc.{domain}", 'TXT')
+        records = []
+        for record in dmarc_records:
+            record_text = record.to_text().strip('"')
+            if record_text.startswith('v=DMARC1'):
+                records.append({
+                    'record': record_text,
+                    'valid': True
+                })
+        
+        if records:
+            return {
+                'has_dmarc': True,
+                'records': records,
+                'status': 'Valid',
+                'description': f'Found {len(records)} DMARC record(s)'
+            }
+        else:
+            return {
+                'has_dmarc': False,
+                'records': [],
+                'status': 'Missing',
+                'description': 'No DMARC records found'
+            }
+    except Exception as e:
+        logger.warning(f"DMARC check failed for {domain}: {str(e)}")
+        return {
+            'has_dmarc': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No DMARC records found'
+        }
+
+def get_dkim_details(domain):
+    """Get DKIM record information (basic check)"""
+    # Common DKIM selectors to check
+    common_selectors = ['default', 'google', 'k1', 'selector1', 'selector2']
+    dkim_records = []
+    
+    for selector in common_selectors:
+        try:
+            dkim_domain = f"{selector}._domainkey.{domain}"
+            records = dns.resolver.resolve(dkim_domain, 'TXT')
+            for record in records:
+                record_text = record.to_text().strip('"')
+                if record_text.startswith('v=DKIM1'):
+                    dkim_records.append({
+                        'selector': selector,
+                        'record': record_text[:100] + '...' if len(record_text) > 100 else record_text,
+                        'valid': True
+                    })
+        except:
+            continue
+    
+    if dkim_records:
+        return {
+            'has_dkim': True,
+            'records': dkim_records,
+            'status': 'Valid',
+            'description': f'Found {len(dkim_records)} DKIM record(s)'
+        }
+    else:
+        return {
+            'has_dkim': False,
+            'records': [],
+            'status': 'Not Found',
+            'description': 'No DKIM records found (checked common selectors)'
+        }
+
+def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
+    """Calculate security score based on email configuration"""
+    score = 0
+    max_score = 100
+    
+    if mx_result['has_mx']:
+        score += 25
+    if spf_result['has_spf']:
+        score += 25
+    if dmarc_result['has_dmarc']:
+        score += 25
+    if dkim_result['has_dkim']:
+        score += 25
+    
+    if score >= 90:
+        grade = 'A'
+        status = 'Excellent'
+    elif score >= 75:
+        grade = 'B'
+        status = 'Good'
+    elif score >= 50:
+        grade = 'C'
+        status = 'Fair'
+    elif score >= 25:
+        grade = 'D'
+        status = 'Poor'
+    else:
+        grade = 'F'
+        status = 'Very Poor'
+    
+    return {
+        'score': score,
+        'grade': grade,
+        'status': status,
+        'max_score': max_score
+    }
+
+@app.route('/api/check', methods=['GET'])
+def check_domain():
+    domain = request.args.get('domain')
+    
+    if not domain:
+        return jsonify({"error": "Domain parameter is required"}), 400
+    
+    # Remove protocol if present
+    domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
+    
+    logger.info(f"Starting comprehensive analysis for domain: {domain}")
+    
+    # Get detailed results for each check
+    mx_result = get_mx_details(domain)
+    spf_result = get_spf_details(domain)
+    dmarc_result = get_dmarc_details(domain)
+    dkim_result = get_dkim_details(domain)
+    
+    # Calculate security score
+    security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+    
+    # Compile comprehensive results
+    results = {
+        "domain": domain,
+        "analysis_timestamp": None,  # Will be set by frontend
+        "security_score": security_score,
+        "mx": {
+            "enabled": mx_result['has_mx'],
+            "status": mx_result['status'],
+            "description": mx_result['description'],
+            "records": mx_result['records']
+        },
+        "spf": {
+            "enabled": spf_result['has_spf'],
+            "status": spf_result['status'],
+            "description": spf_result['description'],
+            "records": spf_result['records']
+        },
+        "dkim": {
+            "enabled": dkim_result['has_dkim'],
+            "status": dkim_result['status'],
+            "description": dkim_result['description'],
+            "records": dkim_result['records']
+        },
+        "dmarc": {
+            "enabled": dmarc_result['has_dmarc'],
+            "status": dmarc_result['status'],
+            "description": dmarc_result['description'],
+            "records": dmarc_result['records']
+        },
+        "recommendations": []
+    }
+    
+    # Generate recommendations
+    if not mx_result['has_mx']:
+        results["recommendations"].append({
+            "type": "critical",
+            "title": "Add MX Records",
+            "description": "MX records are essential for email delivery. Contact your DNS provider to add MX records."
+        })
+    
+    if not spf_result['has_spf']:
+        results["recommendations"].append({
+            "type": "important",
+            "title": "Add SPF Record",
+            "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:_spf.google.com ~all' for Google Workspace."
+        })
+    
+    if not dmarc_result['has_dmarc']:
+        results["recommendations"].append({
+            "type": "important",
+            "title": "Add DMARC Record",
+            "description": "DMARC records provide email authentication reporting. Add a TXT record at _dmarc.yourdomain.com with 'v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com'"
+        })
+    
+    if not dkim_result['has_dkim']:
+        results["recommendations"].append({
+            "type": "info",
+            "title": "Consider DKIM",
+            "description": "DKIM provides email authentication. This is typically configured by your email service provider."
+        })
+    
+    logger.info(f"Analysis completed for {domain}. Security score: {security_score['score']}")
+    return jsonify(results)
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "service": "astraverify-backend"})
+
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({
+        "message": "AstraVerify Backend API",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/api/health",
+            "check_domain": "/api/check?domain=example.com"
+        }
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=False)

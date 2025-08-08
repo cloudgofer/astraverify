@@ -206,11 +206,68 @@ style(ui): improve mobile responsiveness
 - **Target Release Date**: End of October 2025
 - **Stabilization Period**: 1-2 weeks before release
 
+## Deployment Strategy
+
+### Environment Mapping
+
+#### LOCAL Environment
+- **Purpose**: Development and testing
+- **Branch**: Any branch (develop, feature branches)
+- **Deployment**: Local development server
+- **Script**: `./deploy/deploy_local.sh`
+- **Frontend**: http://localhost:3000
+- **Backend**: http://localhost:8080
+
+#### STAGING Environment
+- **Purpose**: Pre-production testing and validation
+- **Branch**: `release/YYYY-MM` branches only
+- **Deployment**: GCP Cloud Run (staging services)
+- **Script**: `./deploy/deploy_staging.sh`
+- **Services**: `astraverify-frontend-staging`, `astraverify-backend-staging`
+- **Configuration**: Staging-specific settings
+
+#### PRODUCTION Environment
+- **Purpose**: Live production environment
+- **Branch**: `main` branch only
+- **Deployment**: GCP Cloud Run (production services)
+- **Script**: `./deploy/deploy_production.sh`
+- **Services**: `astraverify-frontend`, `astraverify-backend`
+- **Configuration**: Production settings with higher resources
+
+### Deployment Workflow
+
+```
+LOCAL Development → STAGING Testing → PRODUCTION Release
+     ↓                    ↓                    ↓
+Feature Branches → Release Branches → Main Branch
+     ↓                    ↓                    ↓
+deploy_local.sh → deploy_staging.sh → deploy_production.sh
+```
+
+### Monthly Release Process
+
+1. **Development Phase** (ongoing)
+   - Work on feature branches
+   - Test locally with `deploy_local.sh`
+   - Merge to `develop` when ready
+
+2. **Stabilization Phase** (1-2 weeks before release)
+   - Create release branch: `release/2025-08`
+   - Deploy to STAGING: `./deploy/deploy_staging.sh`
+   - Testing and bug fixes only
+   - No new features
+
+3. **Production Release** (end of month)
+   - Merge release branch to `main`
+   - Deploy to PRODUCTION: `./deploy/deploy_production.sh`
+   - Tag release with version
+   - Clean up release branch
+
 ## Current Branch Status
 
-- ✅ `main` - Production branch
-- ✅ `develop` - Development integration branch
-- ✅ `release/2025-08` - August 2025 stabilization branch
+- ✅ `main` - Production branch (PRODUCTION deployment)
+- ✅ `develop` - Development integration branch (LOCAL deployment)
+- ✅ `release/2025-08` - August 2025 stabilization branch (STAGING deployment)
 
 ## Next Steps
 
