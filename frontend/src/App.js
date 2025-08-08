@@ -42,27 +42,60 @@ function App() {
     updateURL(domainValue);
 
     try {
-      const url = `${config.API_BASE_URL}${config.ENDPOINTS.CHECK_DOMAIN}?domain=${encodeURIComponent(domainValue)}`;
-      console.log('Making request to:', url);
+      // First, get progressive results (fast)
+      const progressiveUrl = `${config.API_BASE_URL}${config.ENDPOINTS.CHECK_DOMAIN}?domain=${encodeURIComponent(domainValue)}&progressive=true`;
+      console.log('Making progressive request to:', progressiveUrl);
       
-      const response = await fetch(url);
+      const progressiveResponse = await fetch(progressiveUrl);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Response error:', response.status, errorText);
-        throw new Error(`HTTP error! status: ${response.status} - ${errorText.substring(0, 100)}`);
+      if (!progressiveResponse.ok) {
+        const errorText = await progressiveResponse.text();
+        console.error('Progressive response error:', progressiveResponse.status, errorText);
+        throw new Error(`HTTP error! status: ${progressiveResponse.status} - ${errorText.substring(0, 100)}`);
       }
       
-      const contentType = response.headers.get('content-type');
+      const contentType = progressiveResponse.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
+        const text = await progressiveResponse.text();
+        console.error('Non-JSON progressive response:', text);
         throw new Error(`Expected JSON but got ${contentType}. Response: ${text.substring(0, 200)}`);
       }
       
-      const data = await response.json();
-      data.analysis_timestamp = new Date().toISOString();
-      setResult(data);
+      const progressiveData = await progressiveResponse.json();
+      progressiveData.analysis_timestamp = new Date().toISOString();
+      setResult(progressiveData);
+      
+      // Then, complete the DKIM check (comprehensive)
+      const dkimUrl = `${config.API_BASE_URL}/api/check/dkim?domain=${encodeURIComponent(domainValue)}`;
+      console.log('Making DKIM completion request to:', dkimUrl);
+      
+      const dkimResponse = await fetch(dkimUrl);
+      
+      if (dkimResponse.ok) {
+        const dkimData = await dkimResponse.json();
+        
+        // Update the result with completed DKIM data
+        setResult(prevResult => ({
+          ...prevResult,
+          dkim: dkimData.dkim,
+          email_provider: dkimData.email_provider,
+          security_score: dkimData.security_score,
+          progressive: false,
+          message: `Analysis complete! Checked ${dkimData.dkim.selectors_checked || 0} DKIM selectors.`
+        }));
+      } else {
+        console.error('DKIM completion failed:', dkimResponse.status);
+        // Keep the progressive result but mark DKIM as failed
+        setResult(prevResult => ({
+          ...prevResult,
+          dkim: {
+            ...prevResult.dkim,
+            status: "Error",
+            description: "DKIM check failed",
+            checking: false
+          }
+        }));
+      }
     } catch (err) {
       console.error('Full error details:', err);
       setError(`Error checking domain: ${err.message}`);
@@ -366,6 +399,22 @@ function App() {
 
         {result && (
           <div className="result-section">
+            {/* Progressive Loading Indicator */}
+            {result.progressive && result.dkim && result.dkim.checking && (
+              <div className="progressive-loading">
+                <div className="loading-indicator">
+                  <div className="spinner"></div>
+                  <div className="loading-text">
+                    <h3>🔍 Comprehensive DKIM Analysis in Progress</h3>
+                    <p>Checking 276+ DKIM selectors for maximum accuracy...</p>
+                    <div className="progress-info">
+                      <span className="checking-text">Currently checking: {result.dkim.description}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {/* Overall Security Score Section */}
             <div className="overall-security-score">
               <h2>Overall Security Score</h2>

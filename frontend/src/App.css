@@ -1132,3 +1132,79 @@
     font-size: 1.5rem;
   }
 }
+
+/* Progressive Loading Indicator */
+.progressive-loading {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  color: white;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+.loading-text h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.loading-text p {
+  margin: 0 0 12px 0;
+  opacity: 0.9;
+  font-size: 0.95rem;
+}
+
+.progress-info {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.checking-text {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+@media (max-width: 768px) {
+  .progressive-loading {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  
+  .loading-indicator {
+    flex-direction: column;
+    text-align: center;
+    gap: 16px;
+  }
+  
+  .spinner {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .loading-text h3 {
+    font-size: 1.1rem;
+  }
+  
+  .loading-text p {
+    font-size: 0.9rem;
+  }
+}

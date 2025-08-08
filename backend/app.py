@@ -604,6 +604,7 @@ def get_security_status(score):
 def check_domain():
     domain = request.args.get('domain')
     custom_selector = request.args.get('dkim_selector')  # New parameter for custom DKIM selector
+    progressive = request.args.get('progressive', 'false').lower() == 'true'
     
     if not domain:
         return jsonify({"error": "Domain parameter is required"}), 400
@@ -619,6 +620,43 @@ def check_domain():
     mx_result = get_mx_details(domain)
     spf_result = get_spf_details(domain)
     dmarc_result = get_dmarc_details(domain)
+    
+    # For progressive mode, return early results
+    if progressive:
+        early_results = {
+            "domain": domain,
+            "analysis_timestamp": None,
+            "mx": {
+                "enabled": mx_result['has_mx'],
+                "status": mx_result['status'],
+                "description": mx_result['description'],
+                "records": mx_result['records']
+            },
+            "spf": {
+                "enabled": spf_result['has_spf'],
+                "status": spf_result['status'],
+                "description": spf_result['description'],
+                "records": spf_result['records']
+            },
+            "dmarc": {
+                "enabled": dmarc_result['has_dmarc'],
+                "status": dmarc_result['status'],
+                "description": dmarc_result['description'],
+                "records": dmarc_result['records']
+            },
+            "dkim": {
+                "enabled": False,
+                "status": "Checking...",
+                "description": "Comprehensive DKIM check in progress...",
+                "records": [],
+                "checking": True
+            },
+            "progressive": True,
+            "message": "Initial results ready, DKIM check in progress..."
+        }
+        return jsonify(early_results)
+    
+    # Full analysis including DKIM
     dkim_result = get_dkim_details(domain, custom_selector)
     
     # Detect email service provider
@@ -857,6 +895,46 @@ def suggest_dkim_selectors():
             "suggestions": ['default', 'google', 'selector1', 'selector2', 'k1'],
             "message": f"Using default suggestions (error: {str(e)})"
         })
+
+@app.route('/api/check/dkim', methods=['GET'])
+def complete_dkim_check():
+    """Complete DKIM check for progressive mode"""
+    domain = request.args.get('domain')
+    custom_selector = request.args.get('dkim_selector')
+    
+    if not domain:
+        return jsonify({"error": "Domain parameter is required"}), 400
+    
+    # Remove protocol if present
+    domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
+    
+    logger.info(f"Completing DKIM analysis for domain: {domain}")
+    
+    # Get DKIM results
+    dkim_result = get_dkim_details(domain, custom_selector)
+    
+    # Detect email provider based on DKIM
+    mx_result = get_mx_details(domain)
+    spf_result = get_spf_details(domain)
+    email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
+    
+    # Calculate security score
+    dmarc_result = get_dmarc_details(domain)
+    security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+    
+    return jsonify({
+        "domain": domain,
+        "dkim": {
+            "enabled": dkim_result['has_dkim'],
+            "status": dkim_result['status'],
+            "description": dkim_result['description'],
+            "records": dkim_result['records'],
+            "selectors_checked": dkim_result.get('selectors_checked', 0)
+        },
+        "email_provider": email_provider,
+        "security_score": security_score,
+        "completed": True
+    })
 
 @app.route('/api/analytics/recent', methods=['GET'])
 @require_admin_auth
