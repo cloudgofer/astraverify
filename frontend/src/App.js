@@ -416,32 +416,34 @@ function App() {
             )}
             
             {/* Overall Security Score Section */}
-            <div className="overall-security-score">
-              <h2>Overall Security Score</h2>
-              <div className="score-display">
-                <div className="main-score">
-                  <span className="score-number">{result.security_score.score}</span>
-                  <span className="score-out-of">out of 100</span>
+            {result.security_score && (
+              <div className="overall-security-score">
+                <h2>Overall Security Score</h2>
+                <div className="score-display">
+                  <div className="main-score">
+                    <span className="score-number">{result.security_score.score}</span>
+                    <span className="score-out-of">out of 100</span>
+                  </div>
+                  <div className="grade-display">
+                    <span className="grade">{getScoreGrade(result.security_score.score)}</span>
+                    <span className="grade-label">Security Grade</span>
+                  </div>
                 </div>
-                <div className="grade-display">
-                  <span className="grade">{getScoreGrade(result.security_score.score)}</span>
-                  <span className="grade-label">Security Grade</span>
+                <div className="progress-bar">
+                  <div 
+                    className="progress-fill" 
+                    style={{ 
+                      width: `${result.security_score.score}%`,
+                      backgroundColor: getScoreColor(result.security_score.score)
+                    }}
+                  ></div>
                 </div>
+                <p className="score-message">{getScoreStatus(result.security_score.score)}</p>
               </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill" 
-                  style={{ 
-                    width: `${result.security_score.score}%`,
-                    backgroundColor: getScoreColor(result.security_score.score)
-                  }}
-                ></div>
-              </div>
-              <p className="score-message">{getScoreStatus(result.security_score.score)}</p>
-            </div>
+            )}
 
             {/* Score Breakdown Section */}
-            {result.security_score.scoring_details && (
+            {result.security_score && result.security_score.scoring_details && (
               <div className="score-breakdown">
                 <h3>Score Breakdown</h3>
                 <div className="base-score">

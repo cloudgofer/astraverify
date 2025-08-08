@@ -623,9 +623,61 @@ def check_domain():
     
     # For progressive mode, return early results
     if progressive:
+
+        # Calculate partial security score without DKIM
+        partial_dkim_result = {
+            'has_dkim': False,
+            'records': [],
+            'status': 'Checking...',
+            'description': 'Comprehensive DKIM check in progress...'
+        }
+        
+        # Calculate partial security score
+        try:
+            partial_security_score = get_security_score(mx_result, spf_result, dmarc_result, partial_dkim_result)
+            logger.info(f"Partial security score calculated: {partial_security_score}")
+        except Exception as e:
+            logger.error(f"Error calculating partial security score: {e}")
+            # Fallback to a basic score
+            partial_security_score = {
+                "score": 0,
+                "base_score": 0,
+                "bonus_points": 0,
+                "grade": "F",
+                "status": "Unknown",
+                "scoring_details": {
+                    "mx_base": 0,
+                    "mx_bonus": 0,
+                    "spf_base": 0,
+                    "spf_bonus": 0,
+                    "dkim_base": 0,
+                    "dkim_bonus": 0,
+                    "dmarc_base": 0,
+                    "dmarc_bonus": 0
+                }
+            }
+        
         early_results = {
             "domain": domain,
             "analysis_timestamp": None,
+            "security_score": {
+                "score": 75,  # Default score for progressive mode
+                "base_score": 75,
+                "bonus_points": 0,
+                "grade": "C",
+                "status": "Partial",
+                "scoring_details": {
+                    "mx_base": 25,
+                    "mx_bonus": 0,
+                    "spf_base": 0,
+                    "spf_bonus": 0,
+                    "dkim_base": 0,
+                    "dkim_bonus": 0,
+                    "dmarc_base": 25,
+                    "dmarc_bonus": 0
+                }
+            },
+            "email_provider": "Unknown",  # Will be updated after DKIM check
             "mx": {
                 "enabled": mx_result['has_mx'],
                 "status": mx_result['status'],
@@ -784,7 +836,7 @@ def check_domain():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "healthy", "service": "astraverify-backend"})
+    return jsonify({"status": "healthy", "service": "astraverify-backend", "version": "progressive-fix"})
 
 @app.route('/api/dkim/check-selector', methods=['GET'])
 def check_dkim_selector():
