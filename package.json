@@ -1,0 +1,23 @@
+{
+  "name": "astraverify-ui-tests",
+  "version": "1.0.0",
+  "description": "UI Tests for AstraVerify Application",
+  "main": "ui_test.js",
+  "scripts": {
+    "test": "node ui_test.js",
+    "test:headless": "node -e \"require('./ui_test.js').runUITests({headless: true})\"",
+    "test:mobile": "node -e \"require('./ui_test.js').runMobileTests()\"",
+    "test:desktop": "node -e \"require('./ui_test.js').runDesktopTests()\""
+  },
+  "dependencies": {
+    "puppeteer": "^21.11.0"
+  },
+  "keywords": [
+    "ui-testing",
+    "puppeteer",
+    "responsive-design",
+    "astraverify"
+  ],
+  "author": "AstraVerify Team",
+  "license": "MIT"
+}

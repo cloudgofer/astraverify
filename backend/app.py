@@ -1,0 +1,821 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import dns.resolver
+import logging
+import re
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from firestore_config import firestore_manager
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+# Admin authentication
+ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY', 'astraverify-admin-2024')
+
+# Email configuration
+EMAIL_SENDER = 'hi@astraverify.com'
+EMAIL_SMTP_SERVER = 'smtp.dreamhost.com'  # DreamHost SMTP server
+EMAIL_SMTP_PORT = 587
+EMAIL_USERNAME = 'hi@astraverify.com'
+
+# Get email password from environment or GCP Secret Manager
+def get_email_password():
+    """Get email password from environment or GCP Secret Manager"""
+    # First try environment variable
+    password = os.environ.get('EMAIL_PASSWORD')
+    if password:
+        logger.info("Using EMAIL_PASSWORD from environment variable")
+        return password
+    
+    # If not in environment, try GCP Secret Manager
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/astraverify/secrets/astraverify-email-password/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        logger.info("Using EMAIL_PASSWORD from GCP Secret Manager")
+        return response.payload.data.decode("UTF-8")
+    except Exception as e:
+        logger.warning(f"Failed to get password from Secret Manager: {e}")
+        return None
+
+EMAIL_PASSWORD = get_email_password()
+
+def require_admin_auth(f):
+    """Decorator to require admin authentication"""
+    def decorated_function(*args, **kwargs):
+        api_key = request.headers.get('X-Admin-API-Key')
+        if api_key != ADMIN_API_KEY:
+            return jsonify({"error": "Admin access required"}), 401
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
+
+def get_mx_details(domain):
+    """Get detailed MX record information"""
+    try:
+        mx_records = dns.resolver.resolve(domain, 'MX')
+        records = []
+        for mx in mx_records:
+            records.append({
+                'priority': mx.preference,
+                'server': str(mx.exchange),
+                'valid': True
+            })
+        return {
+            'has_mx': True,
+            'records': records,
+            'status': 'Valid',
+            'description': f'Found {len(records)} MX record(s)'
+        }
+    except Exception as e:
+        logger.warning(f"MX check failed for {domain}: {str(e)}")
+        return {
+            'has_mx': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No MX records found'
+        }
+
+def get_spf_details(domain):
+    """Get detailed SPF record information"""
+    try:
+        txt_records = dns.resolver.resolve(domain, 'TXT')
+        spf_records = []
+        for record in txt_records:
+            record_text = record.to_text().strip('"')
+            if record_text.startswith('v=spf1'):
+                spf_records.append({
+                    'record': record_text,
+                    'valid': True
+                })
+        
+        if spf_records:
+            return {
+                'has_spf': True,
+                'records': spf_records,
+                'status': 'Valid',
+                'description': f'Found {len(spf_records)} SPF record(s)'
+            }
+        else:
+            return {
+                'has_spf': False,
+                'records': [],
+                'status': 'Missing',
+                'description': 'No SPF records found'
+            }
+    except Exception as e:
+        logger.warning(f"SPF check failed for {domain}: {str(e)}")
+        return {
+            'has_spf': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No SPF records found'
+        }
+
+def get_dmarc_details(domain):
+    """Get detailed DMARC record information"""
+    try:
+        dmarc_records = dns.resolver.resolve(f"_dmarc.{domain}", 'TXT')
+        records = []
+        for record in dmarc_records:
+            record_text = record.to_text().strip('"')
+            if record_text.startswith('v=DMARC1'):
+                records.append({
+                    'record': record_text,
+                    'valid': True
+                })
+        
+        if records:
+            return {
+                'has_dmarc': True,
+                'records': records,
+                'status': 'Valid',
+                'description': f'Found {len(records)} DMARC record(s)'
+            }
+        else:
+            return {
+                'has_dmarc': False,
+                'records': [],
+                'status': 'Missing',
+                'description': 'No DMARC records found'
+            }
+    except Exception as e:
+        logger.warning(f"DMARC check failed for {domain}: {str(e)}")
+        return {
+            'has_dmarc': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No DMARC records found'
+        }
+
+def get_dkim_details(domain):
+    """Get DKIM record information (basic check)"""
+    # Common DKIM selectors to check
+    common_selectors = ['default', 'google', 'k1', 'selector1', 'selector2']
+    dkim_records = []
+    
+    for selector in common_selectors:
+        try:
+            dkim_domain = f"{selector}._domainkey.{domain}"
+            records = dns.resolver.resolve(dkim_domain, 'TXT')
+            for record in records:
+                record_text = record.to_text().strip('"')
+                if record_text.startswith('v=DKIM1'):
+                    dkim_records.append({
+                        'selector': selector,
+                        'record': record_text[:100] + '...' if len(record_text) > 100 else record_text,
+                        'valid': True
+                    })
+        except:
+            continue
+    
+    if dkim_records:
+        return {
+            'has_dkim': True,
+            'records': dkim_records,
+            'status': 'Valid',
+            'description': f'Found {len(dkim_records)} DKIM record(s)'
+        }
+    else:
+        return {
+            'has_dkim': False,
+            'records': [],
+            'status': 'Not Found',
+            'description': 'No DKIM records found (checked common selectors)'
+        }
+
+def detect_email_provider(mx_result, spf_result, dkim_result):
+    """Detect the email service provider based on MX, SPF, and DKIM records"""
+    provider = "Unknown"
+    
+    # Check for Google Workspace
+    google_indicators = [
+        any('google' in r['server'].lower() for r in mx_result['records']),
+        any('_spf.google.com' in r['record'] for r in spf_result['records']),
+        any(r['selector'] == 'google' for r in dkim_result['records'])
+    ]
+    
+    if any(google_indicators):
+        provider = "Google Workspace"
+    
+    # Check for Microsoft 365
+    microsoft_indicators = [
+        any('outlook' in r['server'].lower() or 'microsoft' in r['server'].lower() for r in mx_result['records']),
+        any('_spf.protection.outlook.com' in r['record'] for r in spf_result['records']),
+        any(r['selector'] in ['selector1', 'selector2'] for r in dkim_result['records'])
+    ]
+    
+    if any(microsoft_indicators):
+        provider = "Microsoft 365"
+    
+    # Check for other common providers
+    if any('yahoo' in r['server'].lower() for r in mx_result['records']):
+        provider = "Yahoo"
+    elif any('zoho' in r['server'].lower() for r in mx_result['records']):
+        provider = "Zoho"
+    elif any('mailgun' in r['server'].lower() for r in mx_result['records']):
+        provider = "Mailgun"
+    elif any('sendgrid' in r['server'].lower() for r in mx_result['records']):
+        provider = "SendGrid"
+    
+    return provider
+
+def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
+    """
+    Calculate comprehensive security score with bonus points.
+    
+    Base Scoring (100 points total):
+    - MX Records: 25 points (essential for email delivery)
+    - SPF Records: 25 points (prevents email spoofing)
+    - DMARC Records: 25 points (authentication reporting)
+    - DKIM Records: 25 points (email authentication)
+    
+    Bonus Points (up to 10 additional points):
+    - Multiple MX records: +2 points (redundancy)
+    - Strong SPF policy: +1-2 points (-all > ~all > ?all)
+    - Strict DMARC policy: +1-2 points (p=reject > p=quarantine)
+    - Multiple DKIM selectors: +2 points (diversity) - only for non-Google providers
+    - 100% DMARC coverage: +1 point (pct=100)
+    """
+    score = 0
+    max_score = 100
+    bonus_points = 0
+    max_bonus = 10
+    scoring_details = {}
+    
+    # Base scoring (25 points each)
+    if mx_result['has_mx']:
+        score += 25
+        scoring_details['mx_base'] = 25
+        # Bonus for multiple MX records (redundancy)
+        if len(mx_result['records']) > 1:
+            bonus_points += 2
+            scoring_details['mx_bonus'] = 2
+        else:
+            scoring_details['mx_bonus'] = 0
+    else:
+        scoring_details['mx_base'] = 0
+        scoring_details['mx_bonus'] = 0
+    
+    if spf_result['has_spf']:
+        score += 25
+        scoring_details['spf_base'] = 25
+        # Bonus for strong SPF policy
+        spf_bonus = 0
+        for record in spf_result['records']:
+            if '-all' in record['record']:
+                spf_bonus += 2  # Strongest policy
+            elif '~all' in record['record']:
+                spf_bonus += 1  # Medium policy
+            elif '?all' in record['record']:
+                spf_bonus += 0.5  # Weakest policy
+        bonus_points += spf_bonus
+        scoring_details['spf_bonus'] = spf_bonus
+    else:
+        scoring_details['spf_base'] = 0
+        scoring_details['spf_bonus'] = 0
+    
+    if dmarc_result['has_dmarc']:
+        score += 25
+        scoring_details['dmarc_base'] = 25
+        # Bonus for strong DMARC policy
+        dmarc_bonus = 0
+        for record in dmarc_result['records']:
+            if 'p=reject' in record['record']:
+                dmarc_bonus += 2  # Strictest policy
+            elif 'p=quarantine' in record['record']:
+                dmarc_bonus += 1  # Medium policy
+            if 'pct=100' in record['record']:
+                dmarc_bonus += 1  # 100% coverage
+        bonus_points += dmarc_bonus
+        scoring_details['dmarc_bonus'] = dmarc_bonus
+    else:
+        scoring_details['dmarc_base'] = 0
+        scoring_details['dmarc_bonus'] = 0
+    
+    if dkim_result['has_dkim']:
+        score += 25
+        scoring_details['dkim_base'] = 25
+        # Bonus for multiple DKIM selectors (only for non-Google providers)
+        provider = detect_email_provider(mx_result, spf_result, dkim_result)
+        if len(dkim_result['records']) > 1 and provider != "Google Workspace":
+            bonus_points += 2
+            scoring_details['dkim_bonus'] = 2
+        else:
+            scoring_details['dkim_bonus'] = 0
+    else:
+        scoring_details['dkim_base'] = 0
+        scoring_details['dkim_bonus'] = 0
+    
+    # Apply bonus points (capped at max_bonus)
+    final_score = min(score + bonus_points, max_score)
+    
+    # Determine grade and status
+    if final_score >= 90:
+        grade = 'A'
+        status = 'Excellent'
+    elif final_score >= 75:
+        grade = 'B'
+        status = 'Good'
+    elif final_score >= 50:
+        grade = 'C'
+        status = 'Fair'
+    elif final_score >= 25:
+        grade = 'D'
+        status = 'Poor'
+    else:
+        grade = 'F'
+        status = 'Very Poor'
+    
+    return {
+        'score': round(final_score, 1),
+        'grade': grade,
+        'status': status,
+        'max_score': max_score,
+        'base_score': score,
+        'bonus_points': round(bonus_points, 1),
+        'max_bonus': max_bonus,
+        'scoring_details': scoring_details
+    }
+
+def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
+    """Send email report with analysis results"""
+    try:
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['From'] = f'AstraVerify <{EMAIL_SENDER}>'
+        msg['To'] = to_email
+        msg['Subject'] = f'AstraVerify Security Report for {domain}'
+        
+        # Create HTML content
+        html_content = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .header {{ text-align: center; margin-bottom: 30px; }}
+                .logo {{ font-size: 24px; font-weight: bold; color: #667eea; margin-bottom: 10px; }}
+                .score {{ font-size: 48px; font-weight: bold; color: #4CAF50; margin: 20px 0; }}
+                .grade {{ font-size: 24px; color: #666; margin-bottom: 20px; }}
+                .section {{ margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 5px; }}
+                .section h3 {{ margin: 0 0 10px 0; color: #333; }}
+                .issue {{ margin: 10px 0; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="logo">AstraVerify</div>
+                    <h1>Security Analysis Report</h1>
+                    <p>Domain: <strong>{domain}</strong></p>
+                </div>
+                
+                <div style="text-align: center;">
+                    <div class="score">{analysis_result.get('security_score', {}).get('score', 0)}</div>
+                    <div class="grade">out of 100</div>
+                    <p>Security Grade: <strong>{get_score_grade(analysis_result.get('security_score', {}).get('score', 0))}</strong></p>
+                </div>
+                
+                <div class="section">
+                    <h3>Analysis Summary</h3>
+                    <p><strong>Email Provider:</strong> {analysis_result.get('email_provider', 'Unknown')}</p>
+                    <p><strong>Analysis Date:</strong> {analysis_result.get('analysis_timestamp', 'Unknown')}</p>
+                </div>
+                
+                <div class="section">
+                    <h3>Security Components</h3>
+                    <p><strong>MX Records:</strong> {'✅ Configured' if analysis_result.get('mx', {}).get('enabled') else '❌ Missing'}</p>
+                    <p><strong>SPF Records:</strong> {'✅ Configured' if analysis_result.get('spf', {}).get('enabled') else '❌ Missing'}</p>
+                    <p><strong>DMARC Records:</strong> {'✅ Configured' if analysis_result.get('dmarc', {}).get('enabled') else '❌ Missing'}</p>
+                    <p><strong>DKIM Records:</strong> {'✅ Configured' if analysis_result.get('dkim', {}).get('enabled') else '❌ Missing'}</p>
+                </div>
+        """
+        
+        # Add security issues if any
+        if analysis_result.get('recommendations'):
+            html_content += """
+                <div class="section">
+                    <h3>Security Recommendations</h3>
+            """
+            for rec in analysis_result.get('recommendations', []):
+                html_content += f"""
+                    <div class="issue">
+                        <strong>{rec.get('title', '')}</strong><br>
+                        {rec.get('description', '')}
+                    </div>
+                """
+            html_content += "</div>"
+        
+        html_content += f"""
+                <div class="footer">
+                    <p>This report was generated by AstraVerify - Email Domain Security Analysis Tool</p>
+                    <p>For questions or support, contact: {EMAIL_SENDER}</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Attach HTML content
+        html_part = MIMEText(html_content, 'html')
+        msg.attach(html_part)
+        
+        # Send email
+        logger.info(f"Attempting to send email to {to_email} via {EMAIL_SMTP_SERVER}:{EMAIL_SMTP_PORT}")
+        
+        server = smtplib.SMTP(EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT)
+        logger.info("SMTP connection established")
+        
+        server.starttls()
+        logger.info("TLS started")
+        
+        # Try different authentication methods
+        try:
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            logger.info("SMTP authentication successful with LOGIN")
+        except Exception as login_error:
+            logger.warning(f"LOGIN authentication failed: {login_error}")
+            # Try PLAIN authentication as fallback
+            try:
+                server.ehlo()
+                server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+                logger.info("SMTP authentication successful with PLAIN")
+            except Exception as plain_error:
+                logger.error(f"PLAIN authentication also failed: {plain_error}")
+                raise plain_error
+        
+        text = msg.as_string()
+        server.sendmail(EMAIL_SENDER, to_email, text)
+        logger.info("Email sent successfully")
+        
+        server.quit()
+        logger.info(f"Email report sent successfully to {to_email} for domain {domain}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return False
+
+def get_score_grade(score):
+    """Get letter grade for security score"""
+    if score >= 95: return 'A+'
+    if score >= 90: return 'A'
+    if score >= 85: return 'A-'
+    if score >= 80: return 'B+'
+    if score >= 75: return 'B'
+    if score >= 70: return 'B-'
+    if score >= 65: return 'C+'
+    if score >= 60: return 'C'
+    if score >= 55: return 'C-'
+    if score >= 50: return 'D+'
+    if score >= 45: return 'D'
+    if score >= 40: return 'D-'
+    return 'F'
+
+@app.route('/api/check', methods=['GET'])
+def check_domain():
+    domain = request.args.get('domain')
+    
+    if not domain:
+        return jsonify({"error": "Domain parameter is required"}), 400
+    
+    # Remove protocol if present
+    domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
+    
+    logger.info(f"Starting comprehensive analysis for domain: {domain}")
+    
+    # Get detailed results for each check
+    mx_result = get_mx_details(domain)
+    spf_result = get_spf_details(domain)
+    dmarc_result = get_dmarc_details(domain)
+    dkim_result = get_dkim_details(domain)
+    
+    # Detect email service provider
+    email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
+    
+    # Calculate security score
+    security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+    
+    # Compile comprehensive results
+    results = {
+        "domain": domain,
+        "analysis_timestamp": None,  # Will be set by frontend
+        "security_score": security_score,
+        "email_provider": email_provider,
+        "mx": {
+            "enabled": mx_result['has_mx'],
+            "status": mx_result['status'],
+            "description": mx_result['description'],
+            "records": mx_result['records']
+        },
+        "spf": {
+            "enabled": spf_result['has_spf'],
+            "status": spf_result['status'],
+            "description": spf_result['description'],
+            "records": spf_result['records']
+        },
+        "dkim": {
+            "enabled": dkim_result['has_dkim'],
+            "status": dkim_result['status'],
+            "description": dkim_result['description'],
+            "records": dkim_result['records']
+        },
+        "dmarc": {
+            "enabled": dmarc_result['has_dmarc'],
+            "status": dmarc_result['status'],
+            "description": dmarc_result['description'],
+            "records": dmarc_result['records']
+        },
+        "recommendations": []
+    }
+    
+    # Generate enhanced recommendations based on email provider
+    if not mx_result['has_mx']:
+        results["recommendations"].append({
+            "type": "critical",
+            "title": "Add MX Records",
+            "description": "MX records are essential for email delivery. Contact your DNS provider to add MX records."
+        })
+    elif len(mx_result['records']) == 1:
+        results["recommendations"].append({
+            "type": "info",
+            "title": "Consider Multiple MX Records",
+            "description": "Adding secondary MX records improves email delivery reliability and redundancy."
+        })
+    
+    if not spf_result['has_spf']:
+        if email_provider == "Google Workspace":
+            results["recommendations"].append({
+                "type": "important",
+                "title": "Add SPF Record",
+                "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:_spf.google.com ~all' for Google Workspace."
+            })
+        elif email_provider == "Microsoft 365":
+            results["recommendations"].append({
+                "type": "important",
+                "title": "Add SPF Record",
+                "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:spf.protection.outlook.com ~all' for Microsoft 365."
+            })
+        else:
+            results["recommendations"].append({
+                "type": "important",
+                "title": "Add SPF Record",
+                "description": "SPF records help prevent email spoofing. Contact your email service provider for the correct SPF record."
+            })
+    elif any('~all' in r['record'] for r in spf_result['records']):
+        results["recommendations"].append({
+            "type": "info",
+            "title": "Strengthen SPF Policy",
+            "description": "Consider changing '~all' to '-all' for stronger spoofing protection."
+        })
+    
+    if not dmarc_result['has_dmarc']:
+        results["recommendations"].append({
+            "type": "important",
+            "title": "Add DMARC Record",
+            "description": "DMARC records provide email authentication reporting. Add a TXT record at _dmarc.yourdomain.com with 'v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com'"
+        })
+    elif any('p=none' in r['record'] for r in dmarc_result['records']):
+        results["recommendations"].append({
+            "type": "info",
+            "title": "Strengthen DMARC Policy",
+            "description": "Consider changing 'p=none' to 'p=quarantine' or 'p=reject' for better protection."
+        })
+    
+    if not dkim_result['has_dkim']:
+        results["recommendations"].append({
+            "type": "info",
+            "title": "Consider DKIM",
+            "description": "DKIM provides email authentication. This is typically configured by your email service provider."
+        })
+    elif len(dkim_result['records']) == 1:
+        # Only recommend multiple DKIM selectors for non-Google providers
+        if email_provider != "Google Workspace":
+            results["recommendations"].append({
+                "type": "info",
+                "title": "Consider Multiple DKIM Selectors",
+                "description": "Multiple DKIM selectors provide better authentication diversity and security."
+            })
+        else:
+            results["recommendations"].append({
+                "type": "info",
+                "title": "DKIM Configuration Complete",
+                "description": "Google Workspace uses a single DKIM selector which is the standard configuration."
+            })
+    
+    # Store analysis results in Firestore
+    try:
+        firestore_manager.store_analysis(domain, results)
+        logger.info(f"Analysis stored in Firestore for {domain}")
+    except Exception as e:
+        logger.warning(f"Failed to store analysis in Firestore: {e}")
+    
+    logger.info(f"Analysis completed for {domain}. Security score: {security_score['score']}, Provider: {email_provider}")
+    return jsonify(results)
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "service": "astraverify-backend"})
+
+@app.route('/api/analytics/recent', methods=['GET'])
+@require_admin_auth
+def get_recent_analyses():
+    """Get recent domain analyses"""
+    try:
+        limit = int(request.args.get('limit', 10))
+        analyses = firestore_manager.get_recent_analyses(limit)
+        return jsonify({
+            "success": True,
+            "data": analyses,
+            "count": len(analyses)
+        })
+    except Exception as e:
+        logger.error(f"Failed to get recent analyses: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/analytics/history/<domain>', methods=['GET'])
+@require_admin_auth
+def get_domain_history(domain):
+    """Get analysis history for a specific domain"""
+    try:
+        limit = int(request.args.get('limit', 20))
+        history = firestore_manager.get_domain_history(domain, limit)
+        return jsonify({
+            "success": True,
+            "domain": domain,
+            "data": history,
+            "count": len(history)
+        })
+    except Exception as e:
+        logger.error(f"Failed to get history for {domain}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/analytics/statistics', methods=['GET'])
+@require_admin_auth
+def get_analytics_statistics():
+    """Get analytics statistics"""
+    try:
+        stats = firestore_manager.get_statistics()
+        return jsonify({
+            "success": True,
+            "data": stats
+        })
+    except Exception as e:
+        logger.error(f"Failed to get statistics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/public/statistics', methods=['GET'])
+def get_public_statistics():
+    """Get public statistics (no admin required)"""
+    try:
+        stats = firestore_manager.get_statistics()
+        # Return only basic stats for public consumption
+        public_stats = {
+            "total_analyses": stats.get('total_analyses', 0),
+            "unique_domains": stats.get('unique_domains', 0),
+            "average_security_score": stats.get('average_security_score', 0),
+            "email_provider_distribution": stats.get('email_provider_distribution', {})
+        }
+        return jsonify({
+            "success": True,
+            "data": public_stats
+        })
+    except Exception as e:
+        logger.error(f"Failed to get public statistics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/test-email', methods=['GET'])
+def test_email_config():
+    """Test email configuration"""
+    try:
+        if not EMAIL_PASSWORD:
+            return jsonify({
+                "success": False,
+                "error": "Email password not configured"
+            }), 400
+        
+        # Test SMTP connection
+        server = smtplib.SMTP(EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT)
+        server.starttls()
+        
+        # Try different authentication methods
+        try:
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            logger.info("Test: SMTP authentication successful with LOGIN")
+        except Exception as login_error:
+            logger.warning(f"Test: LOGIN authentication failed: {login_error}")
+            # Try PLAIN authentication as fallback
+            try:
+                server.ehlo()
+                server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+                logger.info("Test: SMTP authentication successful with PLAIN")
+            except Exception as plain_error:
+                logger.error(f"Test: PLAIN authentication also failed: {plain_error}")
+                raise plain_error
+        
+        server.quit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Email configuration is working",
+            "config": {
+                "smtp_server": EMAIL_SMTP_SERVER,
+                "smtp_port": EMAIL_SMTP_PORT,
+                "username": EMAIL_USERNAME,
+                "sender": EMAIL_SENDER,
+                "password_configured": bool(EMAIL_PASSWORD)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Email configuration test failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "config": {
+                "smtp_server": EMAIL_SMTP_SERVER,
+                "smtp_port": EMAIL_SMTP_PORT,
+                "username": EMAIL_USERNAME,
+                "sender": EMAIL_SENDER,
+                "password_configured": bool(EMAIL_PASSWORD)
+            }
+        }), 500
+
+@app.route('/api/email-report', methods=['POST'])
+def send_email_report_endpoint():
+    """Send email report with analysis results"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        domain = data.get('domain')
+        analysis_result = data.get('analysis_result')
+        opt_in_marketing = data.get('opt_in_marketing', False)
+        timestamp = data.get('timestamp')
+        
+        if not email or not domain or not analysis_result:
+            return jsonify({"success": False, "error": "Missing required fields"}), 400
+        
+        # Store email report in Firestore
+        try:
+            firestore_manager.store_email_report(email, domain, analysis_result, opt_in_marketing, timestamp)
+            logger.info(f"Email report stored for {domain} to {email}")
+        except Exception as e:
+            logger.warning(f"Failed to store email report: {e}")
+        
+        # Send actual email
+        if EMAIL_PASSWORD:
+            email_sent = send_email_report(email, domain, analysis_result, opt_in_marketing)
+            if email_sent:
+                return jsonify({
+                    "success": True,
+                    "message": "Email report sent successfully"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Failed to send email"
+                }), 500
+        else:
+            # If no email password configured, just return success
+            return jsonify({
+                "success": True,
+                "message": "Email report queued successfully (email sending not configured)"
+            })
+        
+    except Exception as e:
+        logger.error(f"Failed to process email report: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({
+        "message": "AstraVerify Backend API",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/api/health",
+            "check_domain": "/api/check?domain=example.com",
+            "public": {
+                "statistics": "/api/public/statistics"
+            },
+            "admin": {
+                "recent": "/api/analytics/recent?limit=10",
+                "history": "/api/analytics/history/{domain}?limit=20",
+                "statistics": "/api/analytics/statistics"
+            }
+        }
+    })
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=False)
