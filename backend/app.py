@@ -162,10 +162,20 @@ def get_dmarc_details(domain):
             'description': 'No DMARC records found'
         }
 
-def get_dkim_details(domain):
+def get_dkim_details(domain, custom_selector=None):
     """Get DKIM record information (comprehensive check)"""
-    # Common DKIM selectors to check
-    common_selectors = ['default', 'google', 'k1', 'selector1', 'selector2', 'dreamhost', 'mailgun', 'sendgrid', 'zoho', 'yahoo']
+    # Load comprehensive DKIM selectors from file
+    try:
+        with open('resources/dkim_selectors.txt', 'r') as f:
+            common_selectors = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        # Fallback to common selectors if file not found
+        common_selectors = ['default', 'google', 'k1', 'selector1', 'selector2', 'dreamhost', 'mailgun', 'sendgrid', 'zoho', 'yahoo']
+    
+    # Add custom selector if provided
+    if custom_selector and custom_selector not in common_selectors:
+        common_selectors.insert(0, custom_selector)  # Add at beginning for priority
+    
     dkim_records = []
     
     for selector in common_selectors:
@@ -178,7 +188,8 @@ def get_dkim_details(domain):
                     dkim_records.append({
                         'selector': selector,
                         'record': record_text[:100] + '...' if len(record_text) > 100 else record_text,
-                        'valid': True
+                        'valid': True,
+                        'full_record': record_text
                     })
         except:
             continue
@@ -188,14 +199,16 @@ def get_dkim_details(domain):
             'has_dkim': True,
             'records': dkim_records,
             'status': 'Valid',
-            'description': f'Found {len(dkim_records)} DKIM record(s)'
+            'description': f'Found {len(dkim_records)} DKIM record(s)',
+            'selectors_checked': len(common_selectors)
         }
     else:
         return {
             'has_dkim': False,
             'records': [],
             'status': 'Not Found',
-            'description': 'No DKIM records found (checked common selectors)'
+            'description': f'No DKIM records found (checked {len(common_selectors)} selectors)',
+            'selectors_checked': len(common_selectors)
         }
 
 def detect_email_provider(mx_result, spf_result, dkim_result):
@@ -590,6 +603,7 @@ def get_security_status(score):
 @app.route('/api/check', methods=['GET'])
 def check_domain():
     domain = request.args.get('domain')
+    custom_selector = request.args.get('dkim_selector')  # New parameter for custom DKIM selector
     
     if not domain:
         return jsonify({"error": "Domain parameter is required"}), 400
@@ -598,12 +612,14 @@ def check_domain():
     domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
     
     logger.info(f"Starting comprehensive analysis for domain: {domain}")
+    if custom_selector:
+        logger.info(f"Using custom DKIM selector: {custom_selector}")
     
     # Get detailed results for each check
     mx_result = get_mx_details(domain)
     spf_result = get_spf_details(domain)
     dmarc_result = get_dmarc_details(domain)
-    dkim_result = get_dkim_details(domain)
+    dkim_result = get_dkim_details(domain, custom_selector)
     
     # Detect email service provider
     email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
@@ -731,6 +747,116 @@ def check_domain():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "healthy", "service": "astraverify-backend"})
+
+@app.route('/api/dkim/check-selector', methods=['GET'])
+def check_dkim_selector():
+    """Check if a specific DKIM selector exists for a domain"""
+    domain = request.args.get('domain')
+    selector = request.args.get('selector')
+    
+    if not domain or not selector:
+        return jsonify({"error": "Both domain and selector parameters are required"}), 400
+    
+    try:
+        dkim_domain = f"{selector}._domainkey.{domain}"
+        records = dns.resolver.resolve(dkim_domain, 'TXT')
+        
+        dkim_records = []
+        for record in records:
+            record_text = record.to_text().strip('"')
+            if record_text.startswith('v=DKIM1'):
+                dkim_records.append({
+                    'selector': selector,
+                    'record': record_text[:100] + '...' if len(record_text) > 100 else record_text,
+                    'valid': True,
+                    'full_record': record_text
+                })
+        
+        if dkim_records:
+            return jsonify({
+                "found": True,
+                "selector": selector,
+                "domain": domain,
+                "records": dkim_records,
+                "message": f"DKIM record found for selector '{selector}'"
+            })
+        else:
+            return jsonify({
+                "found": False,
+                "selector": selector,
+                "domain": domain,
+                "message": f"No DKIM record found for selector '{selector}'"
+            })
+    except dns.resolver.NXDOMAIN:
+        return jsonify({
+            "found": False,
+            "selector": selector,
+            "domain": domain,
+            "message": f"No DKIM record found for selector '{selector}'"
+        })
+    except Exception as e:
+        return jsonify({
+            "found": False,
+            "selector": selector,
+            "domain": domain,
+            "error": str(e),
+            "message": f"Error checking DKIM selector '{selector}'"
+        }), 500
+
+@app.route('/api/dkim/suggest-selectors', methods=['GET'])
+def suggest_dkim_selectors():
+    """Suggest DKIM selectors based on email provider patterns"""
+    domain = request.args.get('domain')
+    
+    if not domain:
+        return jsonify({"error": "Domain parameter is required"}), 400
+    
+    # Get MX records to suggest selectors based on email provider
+    try:
+        mx_records = dns.resolver.resolve(domain, 'MX')
+        mx_servers = [str(mx.exchange).lower() for mx in mx_records]
+        
+        suggestions = []
+        
+        # Suggest based on MX server patterns
+        if any('google' in server for server in mx_servers):
+            suggestions.extend(['google', 'google1', 'google2', 'google2025'])
+        elif any('outlook' in server or 'microsoft' in server for server in mx_servers):
+            suggestions.extend(['selector1', 'selector2', 's1', 's2'])
+        elif any('yahoo' in server for server in mx_servers):
+            suggestions.extend(['yahoo', 'ya'])
+        elif any('zoho' in server for server in mx_servers):
+            suggestions.extend(['zoho', 'zohomail'])
+        elif any('mailgun' in server for server in mx_servers):
+            suggestions.extend(['mailgun', 'mg'])
+        elif any('sendgrid' in server for server in mx_servers):
+            suggestions.extend(['sendgrid', 'sg'])
+        elif any('dreamhost' in server for server in mx_servers):
+            suggestions.extend(['dreamhost'])
+        
+        # Add common selectors
+        suggestions.extend(['default', 'k1', 'selector1', 'selector2'])
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_suggestions = []
+        for s in suggestions:
+            if s not in seen:
+                unique_suggestions.append(s)
+                seen.add(s)
+        
+        return jsonify({
+            "domain": domain,
+            "suggestions": unique_suggestions[:10],  # Limit to top 10
+            "message": f"Suggested DKIM selectors for {domain}"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "domain": domain,
+            "suggestions": ['default', 'google', 'selector1', 'selector2', 'k1'],
+            "message": f"Using default suggestions (error: {str(e)})"
+        })
 
 @app.route('/api/analytics/recent', methods=['GET'])
 @require_admin_auth
