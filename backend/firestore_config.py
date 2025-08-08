@@ -11,8 +11,21 @@ class FirestoreManager:
         try:
             # Initialize Firestore client
             self.db = firestore.Client()
-            self.collection_name = 'domain_analyses'
-            logger.info("Firestore client initialized successfully")
+            
+            # Get environment from environment variable
+            self.environment = os.environ.get('ENVIRONMENT', 'production')
+            
+            # Use environment-specific collection names
+            if self.environment == 'staging':
+                self.collection_name = 'domain_analyses_staging'
+                logger.info("Firestore client initialized for STAGING environment")
+            elif self.environment == 'local':
+                self.collection_name = 'domain_analyses_local'
+                logger.info("Firestore client initialized for LOCAL environment")
+            else:
+                self.collection_name = 'domain_analyses'
+                logger.info("Firestore client initialized for PRODUCTION environment")
+                
         except Exception as e:
             logger.error(f"Failed to initialize Firestore: {e}")
             self.db = None
@@ -158,6 +171,13 @@ class FirestoreManager:
             return False
         
         try:
+            # Use environment-specific email reports collection
+            email_collection = 'email_reports'
+            if self.environment == 'staging':
+                email_collection = 'email_reports_staging'
+            elif self.environment == 'local':
+                email_collection = 'email_reports_local'
+            
             doc_data = {
                 'email': email,
                 'domain': domain,
@@ -167,9 +187,9 @@ class FirestoreManager:
                 'status': 'pending',
                 'created_at': firestore.SERVER_TIMESTAMP
             }
-            doc_ref = self.db.collection('email_reports').document()
+            doc_ref = self.db.collection(email_collection).document()
             doc_ref.set(doc_data)
-            logger.info(f"Stored email report for domain: {domain} to email: {email}")
+            logger.info(f"Stored email report for domain: {domain} to email: {email} in {self.environment} environment")
             return True
         except Exception as e:
             logger.error(f"Failed to store email report for {domain}: {e}")

@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+# Environment configuration
+ENVIRONMENT = os.environ.get('ENVIRONMENT', 'production')
+logger.info(f"Starting AstraVerify backend in {ENVIRONMENT} environment")
+
 # Admin authentication
 ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY', 'astraverify-admin-2024')
 
