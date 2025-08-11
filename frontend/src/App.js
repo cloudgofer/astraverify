@@ -14,6 +14,7 @@ function App() {
   const [emailAddress, setEmailAddress] = useState('');
   const [emailOptIn, setEmailOptIn] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const updateURL = (domain) => {
     const url = new URL(window.location);
@@ -276,13 +277,13 @@ function App() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const domainParam = urlParams.get('domain');
-    if (domainParam) {
+    if (domainParam && !domain && !loading && !isEditing) {
       setDomain(domainParam);
       setTimeout(() => {
         checkDomain(domainParam);
       }, 500);
     }
-  }, [checkDomain]);
+  }, []); // Only run once on mount
 
   useEffect(() => {
     const fetchStatistics = async () => {
@@ -328,7 +329,12 @@ function App() {
               type="text"
               inputMode="url"
               value={domain}
-              onChange={(e) => setDomain(e.target.value)}
+              onChange={(e) => {
+                setIsEditing(true);
+                setDomain(e.target.value);
+              }}
+              onFocus={() => setIsEditing(true)}
+              onBlur={() => setTimeout(() => setIsEditing(false), 100)}
               onKeyPress={handleKeyPress}
               placeholder="example.com"
               className="domain-input"
