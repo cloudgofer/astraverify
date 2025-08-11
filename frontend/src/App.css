@@ -5,6 +5,19 @@
   color: #333;
 }
 
+/* Screen reader only class for accessibility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .App-header {
   background: rgba(255, 255, 255, 0.95);
   padding: 2rem 0;
@@ -36,23 +49,41 @@
   border-radius: 15px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.input-wrapper {
+  width: 100%;
+  max-width: 400px;
 }
 
 .domain-input {
   width: 100%;
-  max-width: 400px;
   padding: 1rem 1.5rem;
   font-size: 1.1rem;
   border: 2px solid #e0e0e0;
   border-radius: 10px;
-  margin-right: 1rem;
   transition: all 0.3s ease;
+  box-sizing: border-box;
 }
 
 .domain-input:focus {
   outline: none;
   border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+.check-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3), 0 4px 15px rgba(102, 126, 234, 0.4);
 }
 
 .check-button {
@@ -86,44 +117,7 @@
   border-left: 4px solid #c62828;
 }
 
-.loading-section {
-  background: rgba(255, 255, 255, 0.95);
-  padding: 3rem;
-  border-radius: 15px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  text-align: center;
-}
 
-.loading-spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #667eea;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 1rem;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.loading-steps {
-  margin: 2rem 0;
-}
-
-.loading-step {
-  padding: 0.5rem;
-  margin: 0.5rem 0;
-  color: #666;
-  font-style: italic;
-}
-
-.loading-time {
-  color: #999;
-  font-size: 0.9rem;
-}
 
 .result-section {
   background: rgba(255, 255, 255, 0.95);
@@ -200,6 +194,21 @@
   height: 100%;
   border-radius: 4px;
   transition: width 0.3s ease;
+}
+
+.progress-fill.animated {
+  background: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.4) 25%,
+    rgba(255, 255, 255, 0.1) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.4) 75%,
+    rgba(255, 255, 255, 0.1) 75%,
+    rgba(255, 255, 255, 0.1)
+  );
+  background-size: 20px 20px;
+  animation: progressStripes 1s linear infinite;
 }
 
 .score-message {
@@ -647,16 +656,32 @@
   
   .input-section {
     padding: 1.5rem;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+  }
+  
+  .input-wrapper {
+    width: 100%;
+    max-width: none;
   }
   
   .domain-input {
     width: 100%;
-    margin-right: 0;
-    margin-bottom: 1rem;
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 14px 16px;
+    min-height: 44px; /* Minimum touch target */
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   }
   
   .check-button {
     width: 100%;
+    min-height: 44px; /* Minimum touch target */
+    font-size: 16px;
+    padding: 14px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   }
   
   .score-display {
@@ -804,22 +829,30 @@
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    padding: 12px 16px;
+    padding: 14px 16px;
     font-size: 16px; /* Prevents zoom on iOS */
+    border-radius: 8px;
+    min-height: 44px; /* Minimum touch target */
   }
   
   .input-section {
-    padding: 0 16px;
+    padding: 1.5rem;
     width: 100%;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    align-items: stretch;
   }
   
   .check-button {
     width: 100%;
-    margin-top: 0; /* Remove top margin since we're using flex gap */
+    min-height: 44px; /* Minimum touch target */
+    padding: 14px 24px;
+    font-size: 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   }
   
   .score-breakdown {
@@ -844,25 +877,39 @@
 
 @media (max-width: 480px) {
   .App {
-    padding: 16px;
+    padding: 12px;
   }
   
-  .header h1 {
-    font-size: 1.8rem;
+  .App-header h1 {
+    font-size: 1.6rem;
+    margin-bottom: 8px;
   }
   
-  .header p {
-    font-size: 1rem;
+  .App-header p {
+    font-size: 0.9rem;
+    margin-bottom: 16px;
+  }
+  
+  .input-section {
+    padding: 1rem;
+    gap: 12px;
   }
   
   .domain-input {
     font-size: 16px;
-    padding: 14px 16px;
+    padding: 16px 20px;
+    border-radius: 10px;
+    min-height: 52px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   }
   
   .check-button {
-    padding: 14px 24px;
+    padding: 16px 32px;
     font-size: 16px;
+    font-weight: 700;
+    border-radius: 10px;
+    min-height: 52px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
   }
 }
 
@@ -872,12 +919,23 @@
     padding: 24px;
   }
   
+  .input-section {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+  
   .domain-input {
-    max-width: 500px;
+    max-width: 400px;
+    min-width: 300px;
   }
   
   .check-button {
-    margin-left: 12px;
+    margin-left: 0;
+    padding: 14px 28px;
+    font-size: 16px;
+    white-space: nowrap;
   }
 }
 
@@ -1037,19 +1095,7 @@
   font-size: 16px;
 }
 
-.sending-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid transparent;
-  border-top: 2px solid white;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
 
 .email-optin {
   margin-top: 1rem;
@@ -1143,44 +1189,96 @@
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 }
 
-.loading-indicator {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid rgba(255, 255, 255, 0.3);
-  border-top: 4px solid white;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  flex-shrink: 0;
+.loading-text {
+  width: 100%;
 }
 
 .loading-text h3 {
   margin: 0 0 8px 0;
-  font-size: 1.2rem;
+  font-size: 1.5rem;
   font-weight: 600;
 }
 
 .loading-text p {
-  margin: 0 0 12px 0;
+  margin: 0 0 16px 0;
   opacity: 0.9;
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .progress-info {
-  background: rgba(255, 255, 255, 0.1);
+  margin-top: 16px;
+}
+
+.component-progress {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.progress-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 6px;
   font-size: 0.9rem;
 }
 
-.checking-text {
-  font-style: italic;
-  opacity: 0.8;
+.component-name {
+  font-weight: 500;
+}
+
+.status-icon {
+  font-size: 1.1rem;
+}
+
+.overall-progress {
+  margin-top: 16px;
+}
+
+.overall-progress .progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.overall-progress .progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  background: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.4) 25%,
+    rgba(255, 255, 255, 0.1) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.4) 75%,
+    rgba(255, 255, 255, 0.1) 75%,
+    rgba(255, 255, 255, 0.1)
+  );
+  background-size: 20px 20px;
+  animation: progressStripes 1s linear infinite;
+}
+
+@keyframes progressStripes {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 20px 20px;
+  }
+}
+
+.progress-text {
+  text-align: center;
+  font-size: 0.9rem;
+  opacity: 0.9;
+  margin: 0;
 }
 
 @media (max-width: 768px) {
@@ -1189,22 +1287,40 @@
     margin-bottom: 16px;
   }
   
-  .loading-indicator {
-    flex-direction: column;
-    text-align: center;
-    gap: 16px;
-  }
-  
-  .spinner {
-    width: 32px;
-    height: 32px;
-  }
-  
   .loading-text h3 {
     font-size: 1.1rem;
   }
   
   .loading-text p {
     font-size: 0.9rem;
+  }
+  
+  .component-progress {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  
+  .progress-item {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+  }
+}
+
+.hourglass-animation {
+  display: inline-block;
+  font-size: 2rem;
+  animation: hourglassFlip 3s infinite;
+  margin: 0 0.5rem;
+}
+
+@keyframes hourglassFlip {
+  0%, 45% {
+    transform: rotate(0deg);
+  }
+  50%, 95% {
+    transform: rotate(180deg);
+  }
+  100% {
+    transform: rotate(360deg);
   }
 }

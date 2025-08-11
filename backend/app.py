@@ -11,6 +11,9 @@ from email.mime.base import MIMEBase
 from email import encoders
 from firestore_config import firestore_manager
 
+# Configure DNS resolver for better reliability
+dns.resolver.default_resolver = dns.resolver.Resolver(configure=True)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -129,7 +132,9 @@ def get_spf_details(domain):
 def get_dmarc_details(domain):
     """Get detailed DMARC record information"""
     try:
+        logger.info(f"Attempting to resolve DMARC for {domain}")
         dmarc_records = dns.resolver.resolve(f"_dmarc.{domain}", 'TXT')
+        logger.info(f"Successfully resolved DMARC for {domain}: {len(dmarc_records)} records")
         records = []
         for record in dmarc_records:
             record_text = record.to_text().strip('"')
@@ -140,6 +145,7 @@ def get_dmarc_details(domain):
                 })
         
         if records:
+            logger.info(f"DMARC validation successful for {domain}")
             return {
                 'has_dmarc': True,
                 'records': records,
@@ -147,6 +153,7 @@ def get_dmarc_details(domain):
                 'description': f'Found {len(records)} DMARC record(s)'
             }
         else:
+            logger.warning(f"DMARC records found but none are valid for {domain}")
             return {
                 'has_dmarc': False,
                 'records': [],
