@@ -492,7 +492,7 @@ function App() {
                       <h4 className="text-lg font-semibold text-gray-900">DMARC Records</h4>
                       <div className="flex items-center space-x-2">
                         <span className="text-2xl">{getComponentIcon(result.dmarc?.enabled, getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0))}</span>
-                        <span className="text-sm font-medium">{getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0)}/25</span>
+                        <span className="text-sm font-medium">{getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0)}/30</span>
                       </div>
                     </div>
                     <p className="text-gray-600 text-sm">Domain-based Message Authentication</p>
@@ -504,7 +504,7 @@ function App() {
                       <h4 className="text-lg font-semibold text-gray-900">DKIM Records</h4>
                       <div className="flex items-center space-x-2">
                         <span className="text-2xl">{getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0))}</span>
-                        <span className="text-sm font-medium">{getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0)}/25</span>
+                        <span className="text-sm font-medium">{getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0)}/20</span>
                       </div>
                     </div>
                     <p className="text-gray-600 text-sm">DomainKeys Identified Mail</p>

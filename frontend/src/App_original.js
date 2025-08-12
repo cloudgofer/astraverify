@@ -75,23 +75,14 @@ function App() {
       if (dkimResponse.ok) {
         const dkimData = await dkimResponse.json();
         
-        console.log('🔍 DKIM completion response:', dkimData);
-        console.log('🔍 DKIM recommendations:', dkimData.recommendations);
-        
-        setResult(prevResult => {
-          const newResult = {
-            ...prevResult,
-            dkim: dkimData.dkim,
-            email_provider: dkimData.email_provider,
-            security_score: dkimData.security_score,
-            recommendations: dkimData.recommendations || [],
-            progressive: false,
-            message: `Analysis complete! Checked ${dkimData.dkim.selectors_checked || 0} DKIM selectors.`
-          };
-          console.log('🔍 Updated result:', newResult);
-          console.log('🔍 Final recommendations:', newResult.recommendations);
-          return newResult;
-        });
+        setResult(prevResult => ({
+          ...prevResult,
+          dkim: dkimData.dkim,
+          email_provider: dkimData.email_provider,
+          security_score: dkimData.security_score,
+          progressive: false,
+          message: `Analysis complete! Checked ${dkimData.dkim.selectors_checked || 0} DKIM selectors.`
+        }));
       } else {
         console.error('DKIM completion failed:', dkimResponse.status);
         setResult(prevResult => ({
@@ -119,7 +110,7 @@ function App() {
 
     setEmailSending(true);
     try {
-      const response = await fetch(`${config.API_BASE_URL}/api/email-report`, {
+      const response = await fetch(`${config.API_BASE_URL}/api/send-report`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,22 +118,16 @@ function App() {
         body: JSON.stringify({
           email: emailAddress,
           domain: domain,
-          analysis_result: result,
-          opt_in_marketing: emailOptIn,
-          timestamp: new Date().toISOString()
+          result: result,
+          opt_in: emailOptIn
         }),
       });
 
       if (response.ok) {
-        const responseData = await response.json();
-        if (responseData.success) {
-          alert('Email report sent successfully! Check your inbox for the detailed security analysis.');
-          setShowEmailModal(false);
-          setEmailAddress('');
-          setEmailOptIn(false);
-        } else {
-          alert(`Failed to send email: ${responseData.error || 'Unknown error'}`);
-        }
+        alert('Email report sent successfully!');
+        setShowEmailModal(false);
+        setEmailAddress('');
+        setEmailOptIn(false);
       } else {
         const errorData = await response.json();
         alert(`Failed to send email: ${errorData.error || 'Unknown error'}`);
@@ -200,141 +185,25 @@ function App() {
     return 'Very poor security configuration.';
   };
 
-  const getComponentScore = (base, bonus = 0, componentName = null) => {
+  const getComponentScore = (base, bonus = 0) => {
     const total = base + bonus;
-    let max = 25; // Default max
-    
-    // Set component-specific max scores
-    if (componentName === 'dmarc') {
-      max = 30; // DMARC has higher max score
-    } else if (componentName === 'dkim') {
-      max = 20; // DKIM has lower max score
-    }
-    
+    const max = 25;
     return Math.min(total, max);
   };
 
-  const getComponentMaxScore = (componentName) => {
-    switch (componentName) {
-      case 'dmarc':
-        return 30;
-      case 'dkim':
-        return 20;
-      default:
-        return 25;
-    }
-  };
-
-  const getComponentIcon = (enabled, score, overallScore = 0) => {
-    // If no records exist or score is 0, show red X (missing/failed)
-    if (!enabled || score === 0) return '❌';
-    
-    // If score is good (80% or higher), show green checkmark
-    if (score >= 20) return '✅'; // 20/25 = 80% for most components
-    if (score >= 24) return '✅'; // 24/30 = 80% for DMARC
-    if (score >= 16) return '✅'; // 16/20 = 80% for DKIM
-    
-    // If score is moderate (50% or higher), show green checkmark
-    if (score >= 13) return '✅'; // 13/25 = 52% for most components
-    if (score >= 15) return '✅'; // 15/30 = 50% for DMARC
-    if (score >= 10) return '✅'; // 10/20 = 50% for DKIM
-    
-    // If score is low but present, show yellow warning
-    if (score >= 1) return '⚠️';
-    
-    // Fallback to red X for any other case
+  const getComponentIcon = (enabled, score) => {
+    if (!enabled) return '❌';
+    if (score >= 25) return '✅';
+    if (score >= 15) return '⚠️';
     return '❌';
-  };
-
-  const getComponentIconClass = (icon) => {
-    if (icon === '✅') return 'success';
-    if (icon === '⚠️') return 'warning';
-    return 'error';
-  };
-
-  const getBonusExplanation = (componentName, baseScore, bonusScore) => {
-    if (bonusScore === 0) return null;
-    
-    const detailedExplanations = {
-      mx: {
-        2: "Multiple MX records for redundancy\n+2 points",
-        3: "Trusted email provider (Google, Microsoft, etc.)\n+3 points",
-        5: "Multiple MX records for redundancy\n+2 points\nTrusted email provider\n+3 points",
-        7: "Multiple MX records for redundancy\n+2 points\nTrusted email provider\n+3 points\nSecure mail server configuration\n+2 points"
-      },
-      spf: {
-        2: "Strong SPF policy (-all)\n+2 points",
-        3: "Strong SPF policy (-all)\n+2 points\nInclude mechanisms for delegation\n+1 point",
-        4: "Strong SPF policy (-all)\n+2 points\nInclude mechanisms for delegation\n+1 point\nDirect IP specifications\n+1 point",
-        5: "Strong SPF policy (-all)\n+2 points\nInclude mechanisms for delegation\n+1 point\nDirect IP specifications\n+1 point\nDomain A/MX records\n+1 point",
-        7: "Strong SPF policy (-all)\n+2 points\nInclude mechanisms for delegation\n+2 points\nDirect IP specifications\n+2 points\nDomain A/MX records\n+1 point"
-      },
-      dmarc: {
-        2: "Strict DMARC policy (p=reject)\n+2 points",
-        3: "Strict DMARC policy (p=reject)\n+2 points\nFull coverage (pct=100)\n+1 point",
-        4: "Strict DMARC policy (p=reject)\n+2 points\nFull coverage (pct=100)\n+1 point\nAggregate reports configured (rua=)\n+1 point",
-        5: "Strict DMARC policy (p=reject)\n+2 points\nFull coverage (pct=100)\n+1 point\nAggregate reports configured (rua=)\n+1 point\nForensic reports configured (ruf=)\n+1 point",
-        6: "Strict DMARC policy (p=reject)\n+2 points\nStrict subdomain policy (sp=reject)\n+3 points\nFull coverage (pct=100)\n+1 point",
-        8: "Strict DMARC policy (p=reject)\n+2 points\nStrict subdomain policy (sp=reject)\n+3 points\nFull coverage (pct=100)\n+1 point\nAggregate reports configured (rua=)\n+1 point\nForensic reports configured (ruf=)\n+1 point"
-      },
-      dkim: {
-        2: "Multiple DKIM selectors for diversity\n+2 points",
-        3: "Multiple DKIM selectors for diversity\n+2 points\nStrong algorithm (RSA-2048+, Ed25519)\n+1 point",
-        4: "Multiple DKIM selectors for diversity\n+2 points\nStrong algorithm (RSA-2048+, Ed25519)\n+1 point\nStrong key length (2048+ bits)\n+1 point",
-        5: "Multiple DKIM selectors for diversity\n+2 points\nStrong algorithm (RSA-2048+, Ed25519)\n+1 point\nStrong key length (2048+ bits)\n+1 point\nAdditional security features\n+1 point"
-      }
-    };
-    
-    const componentExplanations = detailedExplanations[componentName] || {};
-    return componentExplanations[bonusScore] || `+${bonusScore} bonus points for advanced configuration`;
-  };
-
-  const getMissingPointsExplanation = (componentName, currentScore, maxScore) => {
-    const missingPoints = maxScore - currentScore;
-    if (missingPoints <= 0) return null;
-    
-    const detailedExplanations = {
-      mx: {
-        missing: missingPoints,
-        details: "Redundancy (3+ MX records)\n+5 points\nTrusted email provider\n+3 points\nSecure mail server configuration\n+2 points"
-      },
-      spf: {
-        missing: missingPoints,
-        details: "Strict SPF policy (-all)\n+8 points\nInclude mechanisms for delegation\n+2 points\nDirect IP specifications\n+2 points\nDomain A/MX records\n+1 point\nNo redirect mechanisms\n+2 points"
-      },
-      dmarc: {
-        missing: missingPoints,
-        details: "Strict DMARC policy (p=reject)\n+8 points\nStrict subdomain policy (sp=reject)\n+3 points\nFull coverage (pct=100)\n+2 points\nAggregate reports configured (rua=)\n+2 points\nForensic reports configured (ruf=)\n+1 point"
-      },
-      dkim: {
-        missing: missingPoints,
-        details: "Multiple DKIM selectors\n+4 points\nStrong algorithm (RSA-2048+, Ed25519)\n+3 points\nStrong key length (2048+ bits)\n+2 points"
-      }
-    };
-    
-    const componentInfo = detailedExplanations[componentName];
-    if (!componentInfo) return null;
-    
-    return `${componentInfo.missing} points missing:\n${componentInfo.details}`;
   };
 
   const getRecommendationIcon = (type) => {
     switch (type) {
-      case 'critical': return '⚠️';
+      case 'critical': return '🚨';
       case 'important': return '⚠️';
       case 'info': return 'ℹ️';
-      case 'ok': return '✅';
-      default: return 'ℹ️';
-    }
-  };
-
-  const getRecommendationIconClass = (type) => {
-    switch (type) {
-      case 'critical': return 'warning';
-      case 'important': return 'warning';
-      case 'info': return 'info';
-      case 'ok': return 'success';
-      default: return 'info';
+      default: return '💡';
     }
   };
 
@@ -514,7 +383,7 @@ function App() {
                       className="progress-fill animated" 
                       style={{ 
                         width: '25%',
-                        backgroundColor: '#6c757d'
+                        backgroundColor: '#4CAF50'
                       }}
                     ></div>
                   </div>
@@ -546,15 +415,15 @@ function App() {
                     <div className="component-progress">
                       <div className="progress-item">
                         <span className="component-name">MX Records</span>
-                        <span className="status-icon">✓</span>
+                        <span className="status-icon">✅</span>
                       </div>
                       <div className="progress-item">
                         <span className="component-name">SPF Records</span>
-                        <span className="status-icon">✓</span>
+                        <span className="status-icon">✅</span>
                       </div>
                       <div className="progress-item">
                         <span className="component-name">DMARC Records</span>
-                        <span className="status-icon">✓</span>
+                        <span className="status-icon">✅</span>
                       </div>
                       <div className="progress-item">
                         <span className="component-name">DKIM Records</span>
@@ -569,7 +438,7 @@ function App() {
                           className="progress-fill animated" 
                           style={{ 
                             width: '75%',
-                            backgroundColor: '#6c757d'
+                            backgroundColor: '#4CAF50'
                           }}
                         ></div>
                       </div>
@@ -617,37 +486,37 @@ function App() {
                     <div className="score-component">
                       <span className="component-name">MX Records:</span>
                       <span className={`component-score ${result.security_score.scoring_details.mx_base === 0 ? 'zero' : ''}`}>
-                        {result.security_score.scoring_details.mx_base}/{getComponentMaxScore('mx')} pts
+                        {result.security_score.scoring_details.mx_base} pts
                       </span>
                       {result.security_score.scoring_details.mx_bonus > 0 && (
-                        <span className="bonus-indicator-score">+{result.security_score.scoring_details.mx_bonus} Bonus</span>
+                        <span className="bonus-indicator">+{result.security_score.scoring_details.mx_bonus} bonus</span>
                       )}
                     </div>
                     <div className="score-component">
                       <span className="component-name">SPF Records:</span>
                       <span className={`component-score ${result.security_score.scoring_details.spf_base === 0 ? 'zero' : ''}`}>
-                        {result.security_score.scoring_details.spf_base}/{getComponentMaxScore('spf')} pts
+                        {result.security_score.scoring_details.spf_base} pts
                       </span>
                       {result.security_score.scoring_details.spf_bonus > 0 && (
-                        <span className="bonus-indicator-score">+{result.security_score.scoring_details.spf_bonus} Bonus</span>
+                        <span className="bonus-indicator">+{result.security_score.scoring_details.spf_bonus} bonus</span>
                       )}
                     </div>
                     <div className="score-component">
                       <span className="component-name">DMARC Records:</span>
                       <span className={`component-score ${result.security_score.scoring_details.dmarc_base === 0 ? 'zero' : ''}`}>
-                        {result.security_score.scoring_details.dmarc_base}/{getComponentMaxScore('dmarc')} pts
+                        {result.security_score.scoring_details.dmarc_base} pts
                       </span>
                       {result.security_score.scoring_details.dmarc_bonus > 0 && (
-                        <span className="bonus-indicator-score">+{result.security_score.scoring_details.dmarc_bonus} Bonus</span>
+                        <span className="bonus-indicator">+{result.security_score.scoring_details.dmarc_bonus} bonus</span>
                       )}
                     </div>
                     <div className="score-component">
                       <span className="component-name">DKIM Records:</span>
                       <span className={`component-score ${result.security_score.scoring_details.dkim_base === 0 ? 'zero' : ''}`}>
-                        {result.security_score.scoring_details.dkim_base}/{getComponentMaxScore('dkim')} pts
+                        {result.security_score.scoring_details.dkim_base} pts
                       </span>
                       {result.security_score.scoring_details.dkim_bonus > 0 && (
-                        <span className="bonus-indicator-score">+{result.security_score.scoring_details.dkim_bonus} Bonus</span>
+                        <span className="bonus-indicator">+{result.security_score.scoring_details.dkim_bonus} bonus</span>
                       )}
                     </div>
                   </div>
@@ -722,14 +591,12 @@ function App() {
                         <p>Mail Exchange Configuration</p>
                       </div>
                       <div className="component-status">
-                        <span className={`status-icon ${getComponentIconClass(getComponentIcon(result.mx?.enabled, getComponentScore(result.security_score?.scoring_details?.mx_base || 0, result.security_score?.scoring_details?.mx_bonus || 0, 'mx')))}`}>
-                          {getComponentIcon(result.mx?.enabled, getComponentScore(result.security_score?.scoring_details?.mx_base || 0, result.security_score?.scoring_details?.mx_bonus || 0, 'mx'))}
-                        </span>
+                        <span className="status-icon">{getComponentIcon(result.mx?.enabled, getComponentScore(result.security_score?.scoring_details?.mx_base || 0, result.security_score?.scoring_details?.mx_bonus || 0))}</span>
                         <span className="component-score">
-                          {getComponentScore(result.security_score?.scoring_details?.mx_base || 0, result.security_score?.scoring_details?.mx_bonus || 0, 'mx')}/{getComponentMaxScore('mx')}
+                          {getComponentScore(result.security_score?.scoring_details?.mx_base || 0, result.security_score?.scoring_details?.mx_bonus || 0)}/25
                         </span>
-                        <span className={`expand-icon ${expandedComponents.mx ? 'expanded' : ''}`}>
-                          ▼
+                        <span className="expand-icon">
+                          {expandedComponents.mx ? '▼' : '▶'}
                         </span>
                       </div>
                     </div>
@@ -739,9 +606,7 @@ function App() {
                           <h5>{getComponentDescription('mx').title}</h5>
                           <p>{getComponentDescription('mx').description}</p>
                           <div className={`status-message ${result.mx?.enabled ? 'success' : 'failure'}`}>
-                            <span className={`status-icon ${result.mx?.enabled ? 'success' : 'error'}`}>
-                              {result.mx?.enabled ? '✅' : '❌'}
-                            </span>
+                            <span className="status-icon">✅</span>
                             <span>{result.mx?.enabled ? getComponentDescription('mx').successMessage : getComponentDescription('mx').failureMessage}</span>
                           </div>
                         </div>
@@ -749,39 +614,6 @@ function App() {
                           <h5>Current Mail Servers:</h5>
                           {renderRecords('mx', result.mx?.records)}
                         </div>
-                        
-                        {/* Score Explanations */}
-                        {result.security_score?.scoring_details?.mx_bonus > 0 && (
-                          <div className="bonus-explanation">
-                            <span className="bonus-indicator">+{result.security_score.scoring_details.mx_bonus} bonus points earned:</span>
-                            <div className="bonus-details">
-                              {getBonusExplanation('mx', result.security_score.scoring_details.mx_base, result.security_score.scoring_details.mx_bonus).split('\n').map((line, index) => (
-                                <div key={index} className="bonus-line">{line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.mx_base === 0 && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('mx')} points</span>
-                            <div className="missing-details">
-                              <div className="missing-line">• Basic MX records: +15 points</div>
-                              <div className="missing-line">• Redundancy (3+ MX records): +5 points</div>
-                              <div className="missing-line">• Trusted email provider: +3 points</div>
-                              <div className="missing-line">• Secure mail server configuration: +2 points</div>
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.mx_base > 0 && result.security_score.scoring_details.mx_base < getComponentMaxScore('mx') && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('mx') - (result.security_score.scoring_details.mx_base + (result.security_score.scoring_details.mx_bonus || 0))} points</span>
-                            <div className="missing-details">
-                              {getMissingPointsExplanation('mx', result.security_score.scoring_details.mx_base + (result.security_score.scoring_details.mx_bonus || 0), getComponentMaxScore('mx')).split('\n').slice(1).map((line, index) => (
-                                <div key={index} className="missing-line">• {line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -794,14 +626,12 @@ function App() {
                         <p>Sender Policy Framework</p>
                       </div>
                       <div className="component-status">
-                        <span className={`status-icon ${getComponentIconClass(getComponentIcon(result.spf?.enabled, getComponentScore(result.security_score?.scoring_details?.spf_base || 0, result.security_score?.scoring_details?.spf_bonus || 0, 'spf')))}`}>
-                          {getComponentIcon(result.spf?.enabled, getComponentScore(result.security_score?.scoring_details?.spf_base || 0, result.security_score?.scoring_details?.spf_bonus || 0, 'spf'))}
-                        </span>
+                        <span className="status-icon">{getComponentIcon(result.spf?.enabled, getComponentScore(result.security_score?.scoring_details?.spf_base || 0, result.security_score?.scoring_details?.spf_bonus || 0))}</span>
                         <span className="component-score">
-                          {getComponentScore(result.security_score?.scoring_details?.spf_base || 0, result.security_score?.scoring_details?.spf_bonus || 0, 'spf')}/{getComponentMaxScore('spf')}
+                          {getComponentScore(result.security_score?.scoring_details?.spf_base || 0, result.security_score?.scoring_details?.spf_bonus || 0)}/25
                         </span>
-                        <span className={`expand-icon ${expandedComponents.spf ? 'expanded' : ''}`}>
-                          ▼
+                        <span className="expand-icon">
+                          {expandedComponents.spf ? '▼' : '▶'}
                         </span>
                       </div>
                     </div>
@@ -811,9 +641,7 @@ function App() {
                           <h5>{getComponentDescription('spf').title}</h5>
                           <p>{getComponentDescription('spf').description}</p>
                           <div className={`status-message ${result.spf?.enabled ? 'success' : 'failure'}`}>
-                            <span className={`status-icon ${result.spf?.enabled ? 'success' : 'error'}`}>
-                              {result.spf?.enabled ? '✅' : '❌'}
-                            </span>
+                            <span className="status-icon">✅</span>
                             <span>{result.spf?.enabled ? getComponentDescription('spf').successMessage : getComponentDescription('spf').failureMessage}</span>
                           </div>
                         </div>
@@ -821,41 +649,6 @@ function App() {
                           <h5>Current SPF Records:</h5>
                           {renderRecords('spf', result.spf?.records)}
                         </div>
-                        
-                        {/* Score Explanations */}
-                        {result.security_score?.scoring_details?.spf_bonus > 0 && (
-                          <div className="bonus-explanation">
-                            <span className="bonus-indicator">+{result.security_score.scoring_details.spf_bonus} bonus points earned:</span>
-                            <div className="bonus-details">
-                              {getBonusExplanation('spf', result.security_score.scoring_details.spf_base, result.security_score.scoring_details.spf_bonus).split('\n').map((line, index) => (
-                                <div key={index} className="bonus-line">{line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.spf_base === 0 && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('spf')} points</span>
-                            <div className="missing-details">
-                              <div className="missing-line">• Basic SPF records: +10 points</div>
-                              <div className="missing-line">• Strict SPF policy (-all): +8 points</div>
-                              <div className="missing-line">• Include mechanisms for delegation: +2 points</div>
-                              <div className="missing-line">• Direct IP specifications: +2 points</div>
-                              <div className="missing-line">• Domain A/MX records: +1 point</div>
-                              <div className="missing-line">• No redirect mechanisms: +2 points</div>
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.spf_base > 0 && result.security_score.scoring_details.spf_base < getComponentMaxScore('spf') && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('spf') - (result.security_score.scoring_details.spf_base + (result.security_score.scoring_details.spf_bonus || 0))} points</span>
-                            <div className="missing-details">
-                              {getMissingPointsExplanation('spf', result.security_score.scoring_details.spf_base + (result.security_score.scoring_details.spf_bonus || 0), getComponentMaxScore('spf')).split('\n').slice(1).map((line, index) => (
-                                <div key={index} className="missing-line">• {line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -868,14 +661,12 @@ function App() {
                         <p>DomainKeys Identified Mail</p>
                       </div>
                       <div className="component-status">
-                        <span className={`status-icon ${getComponentIconClass(getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim')))}`}>
-                          {getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim'))}
-                        </span>
+                        <span className="status-icon">{getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0))}</span>
                         <span className="component-score">
-                          {getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim')}/{getComponentMaxScore('dkim')}
+                          {getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0)}/20
                         </span>
-                        <span className={`expand-icon ${expandedComponents.dkim ? 'expanded' : ''}`}>
-                          ▼
+                        <span className="expand-icon">
+                          {expandedComponents.dkim ? '▼' : '▶'}
                         </span>
                       </div>
                     </div>
@@ -885,9 +676,7 @@ function App() {
                           <h5>{getComponentDescription('dkim').title}</h5>
                           <p>{getComponentDescription('dkim').description}</p>
                           <div className={`status-message ${result.dkim?.enabled ? 'success' : 'failure'}`}>
-                            <span className={`status-icon ${result.dkim?.enabled ? 'success' : 'error'}`}>
-                              {result.dkim?.enabled ? '✅' : '❌'}
-                            </span>
+                            <span className="status-icon">✅</span>
                             <span>{result.dkim?.enabled ? getComponentDescription('dkim').successMessage : getComponentDescription('dkim').failureMessage}</span>
                           </div>
                         </div>
@@ -895,39 +684,6 @@ function App() {
                           <h5>Current DKIM Records:</h5>
                           {renderRecords('dkim', result.dkim?.records)}
                         </div>
-                        
-                        {/* Score Explanations */}
-                        {result.security_score?.scoring_details?.dkim_bonus > 0 && (
-                          <div className="bonus-explanation">
-                            <span className="bonus-indicator">+{result.security_score.scoring_details.dkim_bonus} bonus points earned:</span>
-                            <div className="bonus-details">
-                              {getBonusExplanation('dkim', result.security_score.scoring_details.dkim_base, result.security_score.scoring_details.dkim_bonus).split('\n').map((line, index) => (
-                                <div key={index} className="bonus-line">{line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.dkim_base === 0 && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('dkim')} points</span>
-                            <div className="missing-details">
-                              <div className="missing-line">• Basic DKIM records: +10 points</div>
-                              <div className="missing-line">• Multiple DKIM selectors: +4 points</div>
-                              <div className="missing-line">• Strong algorithm (RSA-2048+, Ed25519): +3 points</div>
-                              <div className="missing-line">• Strong key length (2048+ bits): +2 points</div>
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.dkim_base > 0 && result.security_score.scoring_details.dkim_base < getComponentMaxScore('dkim') && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('dkim') - (result.security_score.scoring_details.dkim_base + (result.security_score.scoring_details.dkim_bonus || 0))} points</span>
-                            <div className="missing-details">
-                              {getMissingPointsExplanation('dkim', result.security_score.scoring_details.dkim_base + (result.security_score.scoring_details.dkim_bonus || 0), getComponentMaxScore('dkim')).split('\n').slice(1).map((line, index) => (
-                                <div key={index} className="missing-line">• {line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -940,14 +696,12 @@ function App() {
                         <p>Domain-based Message Authentication</p>
                       </div>
                       <div className="component-status">
-                        <span className={`status-icon ${getComponentIconClass(getComponentIcon(result.dmarc?.enabled, getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0, 'dmarc')))}`}>
-                          {getComponentIcon(result.dmarc?.enabled, getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0, 'dmarc'))}
-                        </span>
+                        <span className="status-icon">{getComponentIcon(result.dmarc?.enabled, getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0))}</span>
                         <span className="component-score">
-                          {getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0, 'dmarc')}/{getComponentMaxScore('dmarc')}
+                          {getComponentScore(result.security_score?.scoring_details?.dmarc_base || 0, result.security_score?.scoring_details?.dmarc_bonus || 0)}/30
                         </span>
-                        <span className={`expand-icon ${expandedComponents.dmarc ? 'expanded' : ''}`}>
-                          ▼
+                        <span className="expand-icon">
+                          {expandedComponents.dmarc ? '▼' : '▶'}
                         </span>
                       </div>
                     </div>
@@ -957,9 +711,7 @@ function App() {
                           <h5>{getComponentDescription('dmarc').title}</h5>
                           <p>{getComponentDescription('dmarc').description}</p>
                           <div className={`status-message ${result.dmarc?.enabled ? 'success' : 'failure'}`}>
-                            <span className={`status-icon ${result.dmarc?.enabled ? 'success' : 'error'}`}>
-                              {result.dmarc?.enabled ? '✅' : '❌'}
-                            </span>
+                            <span className="status-icon">✅</span>
                             <span>{result.dmarc?.enabled ? getComponentDescription('dmarc').successMessage : getComponentDescription('dmarc').failureMessage}</span>
                           </div>
                         </div>
@@ -967,41 +719,6 @@ function App() {
                           <h5>Current DMARC Records:</h5>
                           {renderRecords('dmarc', result.dmarc?.records)}
                         </div>
-                        
-                        {/* Score Explanations */}
-                        {result.security_score?.scoring_details?.dmarc_bonus > 0 && (
-                          <div className="bonus-explanation">
-                            <span className="bonus-indicator">+{result.security_score.scoring_details.dmarc_bonus} bonus points earned:</span>
-                            <div className="bonus-details">
-                              {getBonusExplanation('dmarc', result.security_score.scoring_details.dmarc_base, result.security_score.scoring_details.dmarc_bonus).split('\n').map((line, index) => (
-                                <div key={index} className="bonus-line">{line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.dmarc_base === 0 && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('dmarc')} points</span>
-                            <div className="missing-details">
-                              <div className="missing-line">• Basic DMARC records: +15 points</div>
-                              <div className="missing-line">• Strict DMARC policy (p=reject): +8 points</div>
-                              <div className="missing-line">• Strict subdomain policy (sp=reject): +3 points</div>
-                              <div className="missing-line">• Full coverage (pct=100): +2 points</div>
-                              <div className="missing-line">• Aggregate reports configured (rua=): +2 points</div>
-                              <div className="missing-line">• Forensic reports configured (ruf=): +1 point</div>
-                            </div>
-                          </div>
-                        )}
-                        {result.security_score?.scoring_details?.dmarc_base > 0 && result.security_score.scoring_details.dmarc_base < getComponentMaxScore('dmarc') && (
-                          <div className="missing-points-explanation">
-                            <span className="missing-title">Missing: {getComponentMaxScore('dmarc') - (result.security_score.scoring_details.dmarc_base + (result.security_score.scoring_details.dmarc_bonus || 0))} points</span>
-                            <div className="missing-details">
-                              {getMissingPointsExplanation('dmarc', result.security_score.scoring_details.dmarc_base + (result.security_score.scoring_details.dmarc_bonus || 0), getComponentMaxScore('dmarc')).split('\n').slice(1).map((line, index) => (
-                                <div key={index} className="missing-line">• {line}</div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -1009,107 +726,22 @@ function App() {
               </div>
             )}
 
-
-
-            {/* Issues and Recommendations Section - Split into two sections like email */}
-            {!result.progressive && (
-              <>
-                {/* Issues Found Section */}
-                {(() => {
-                  const issues = [];
-                  if (!result.dkim?.enabled) {
-                    issues.push({
-                      title: "No DKIM Records Found",
-                      description: "No DKIM records found - emails may be marked as spam",
-                      type: "critical"
-                    });
-                  }
-                  if (!result.dmarc?.enabled) {
-                    issues.push({
-                      title: "No DMARC Record Found", 
-                      description: "No DMARC record found - email authentication not enforced",
-                      type: "critical"
-                    });
-                  }
-                  return issues.length > 0;
-                })() && (
-                  <div className="issues-section">
-                    <h3>🔍 Issues Found</h3>
-                    <div className="issues-list">
-                      {(() => {
-                        const issues = [];
-                        if (!result.dkim?.enabled) {
-                          issues.push({
-                            title: "No DKIM Records Found",
-                            description: "No DKIM records found - emails may be marked as spam",
-                            type: "critical"
-                          });
-                        }
-                        if (!result.dmarc?.enabled) {
-                          issues.push({
-                            title: "No DMARC Record Found", 
-                            description: "No DMARC record found - email authentication not enforced",
-                            type: "critical"
-                          });
-                        }
-                        return issues;
-                      })().map((issue, index) => (
-                        <div key={index} className={`issue-card ${getRecommendationIconClass(issue.type)}`}>
-                          <div className="issue-header">
-                            <div className="issue-icon">{getRecommendationIcon(issue.type)}</div>
-                            <h4 className="issue-title">{issue.title}</h4>
-                          </div>
-                          <div className="issue-content">
-                            <p className="issue-description">{issue.description}</p>
-                          </div>
-                        </div>
-                      ))}
+            {/* Security Issues Section - Only show when analysis is complete */}
+            {result.recommendations && result.recommendations.length > 0 && !result.progressive && (
+              <div className="security-issues">
+                <h3>Security Issues</h3>
+                <div className="issues-list">
+                  {result.recommendations.map((rec, index) => (
+                    <div key={index} className="issue-card">
+                      <div className="issue-icon">{getRecommendationIcon(rec.type)}</div>
+                      <div className="issue-content">
+                        <h4>{rec.title}</h4>
+                        <p>{rec.description}</p>
+                      </div>
                     </div>
-                  </div>
-                )}
-
-                {/* Recommendations Section */}
-                <div className="recommendations-section">
-                  <h3>💡 Recommendations</h3>
-                  {(() => {
-                    console.log('🔍 Recommendations Debug:', {
-                      hasRecommendations: !!result.recommendations,
-                      recommendationsLength: result.recommendations?.length,
-                      recommendations: result.recommendations,
-                      isProgressive: result.progressive,
-                      shouldShowIssues: result.recommendations && result.recommendations.length > 0
-                    });
-                    return result.recommendations && result.recommendations.length > 0;
-                  })() ? (
-                    <div className="recommendations-list">
-                      {result.recommendations.map((rec, index) => (
-                        <div key={index} className={`recommendation-card ${getRecommendationIconClass(rec.type)}`}>
-                          <div className="recommendation-header">
-                            <div className="recommendation-icon">{getRecommendationIcon(rec.type)}</div>
-                            <h4 className="recommendation-title">{rec.title}</h4>
-                          </div>
-                          <div className="recommendation-content">
-                            <p className="recommendation-description">{rec.description}</p>
-                            {(rec.impact || rec.effort || rec.estimated_time) && (
-                              <div className="recommendation-details">
-                                {rec.impact && <span className="recommendation-impact">Impact: {rec.impact}</span>}
-                                {rec.effort && <span className="recommendation-effort">Effort: {rec.effort}</span>}
-                                {rec.estimated_time && <span className="recommendation-time">Time: {rec.estimated_time}</span>}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="no-recommendations">
-                      <div className="no-recommendations-icon">✅</div>
-                      <h4>No Recommendations Found</h4>
-                      <p>Your domain has good email security configuration. All major security components are properly configured.</p>
-                    </div>
-                  )}
+                  ))}
                 </div>
-              </>
+              </div>
             )}
 
             {/* Email Report Button - Only show when analysis is complete */}

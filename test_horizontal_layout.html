@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Components - Vertical Layout with Horizontal Content</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .security-components {
+            padding: 2rem;
+            background: white;
+        }
+        
+        .security-components h3 {
+            margin: 0 0 1.5rem 0;
+            color: #2c3e50;
+            font-size: 1.5rem;
+        }
+        
+        .components-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        .component-card {
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .component-card.success {
+            border-color: #28a745;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.1);
+        }
+        
+        .component-card.failure {
+            border-color: #dc3545;
+            box-shadow: 0 2px 8px rgba(220, 53, 69, 0.1);
+        }
+        
+        .component-header {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.3s ease;
+            flex-direction: row;
+        }
+        
+        .component-header:hover {
+            background: #e9ecef;
+        }
+        
+        .component-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex: 1;
+        }
+        
+        .component-info h4 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 1.2rem;
+            min-width: 120px;
+        }
+        
+        .component-info p {
+            margin: 0;
+            color: #6c757d;
+            font-size: 0.9rem;
+            flex: 1;
+        }
+        
+        .component-status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+        
+        .status-icon {
+            font-size: 1.5rem;
+            display: inline-block;
+            width: 24px;
+            text-align: center;
+        }
+        
+        .status-icon.success {
+            color: #28a745;
+        }
+        
+        .status-icon.warning {
+            color: #ffc107;
+        }
+        
+        .status-icon.error {
+            color: #dc3545;
+        }
+        
+        .component-score {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+        
+        .expand-icon {
+            font-size: 1rem;
+            color: #6c757d;
+            transition: transform 0.3s ease;
+            font-weight: bold;
+        }
+        
+        .expand-icon.expanded {
+            transform: rotate(180deg);
+        }
+        
+        /* Neutral checkmark for progressive loading (not colored) */
+        .progressive-loading .status-icon {
+            color: #6c757d;
+            font-weight: normal;
+        }
+        
+        /* Demo section to show the difference */
+        .demo-section {
+            margin: 2rem 0;
+            padding: 1rem;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        
+        .demo-section h4 {
+            margin: 0 0 1rem 0;
+            color: #495057;
+        }
+        
+        @media (max-width: 768px) {
+            .components-grid {
+                gap: 1rem;
+            }
+            
+            .component-card {
+                width: 100%;
+            }
+            
+            .component-info {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+            
+            .component-info h4 {
+                min-width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="security-components">
+            <h3>Security Components</h3>
+            <div class="components-grid">
+                <!-- MX Records Component -->
+                <div class="component-card success">
+                    <div class="component-header">
+                        <div class="component-info">
+                            <h4>MX Records</h4>
+                            <p>Mail Exchange Configuration - Tells email servers where to deliver emails for your domain</p>
+                        </div>
+                        <div class="component-status">
+                            <span class="status-icon success">✅</span>
+                            <span class="component-score">25/25</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SPF Records Component -->
+                <div class="component-card success">
+                    <div class="component-header">
+                        <div class="component-info">
+                            <h4>SPF Records</h4>
+                            <p>Sender Policy Framework - Prevents email spoofing by specifying authorized sending servers</p>
+                        </div>
+                        <div class="component-status">
+                            <span class="status-icon warning">⚠️</span>
+                            <span class="component-score">15/25</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DKIM Records Component -->
+                <div class="component-card success">
+                    <div class="component-header">
+                        <div class="component-info">
+                            <h4>DKIM Records</h4>
+                            <p>DomainKeys Identified Mail - Digitally signs emails to verify they haven't been tampered with</p>
+                        </div>
+                        <div class="component-status">
+                            <span class="status-icon success">✅</span>
+                            <span class="component-score">22/25</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DMARC Records Component -->
+                <div class="component-card failure">
+                    <div class="component-header">
+                        <div class="component-info">
+                            <h4>DMARC Records</h4>
+                            <p>Domain-based Message Authentication - Provides email authentication reporting and policy enforcement</p>
+                        </div>
+                        <div class="component-status">
+                            <span class="status-icon error">❌</span>
+                            <span class="component-score">0/25</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Demo: Progressive Loading vs Actual Results -->
+        <div class="demo-section">
+            <h4>📊 Progressive Loading vs Actual Results</h4>
+            <p><strong>Progressive Loading (During Analysis):</strong></p>
+            <div class="progressive-loading">
+                <div class="component-progress">
+                    <div class="progress-item">
+                        <span class="component-name">MX Records</span>
+                        <span class="status-icon">✓</span>
+                    </div>
+                    <div class="progress-item">
+                        <span class="component-name">SPF Records</span>
+                        <span class="status-icon">✓</span>
+                    </div>
+                    <div class="progress-item">
+                        <span class="component-name">DMARC Records</span>
+                        <span class="status-icon">✓</span>
+                    </div>
+                    <div class="progress-item">
+                        <span class="component-name">DKIM Records</span>
+                        <span class="status-icon">⏳</span>
+                    </div>
+                </div>
+            </div>
+            
+            <p style="margin-top: 1rem;"><strong>Actual Results (After Analysis):</strong></p>
+            <div class="components-grid">
+                <div class="component-card success">
+                    <div class="component-header">
+                        <div class="component-info">
+                            <h4>MX Records</h4>
+                            <p>Mail Exchange Configuration</p>
+                        </div>
+                        <div class="component-status">
+                            <span class="status-icon success">✅</span>
+                            <span class="component-score">25/25</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="component-card success">
+                    <div class="component-header">
+                        <div class="component-info">
+                            <h4>SPF Records</h4>
+                            <p>Sender Policy Framework</p>
+                        </div>
+                        <div class="component-status">
+                            <span class="status-icon warning">⚠️</span>
+                            <span class="component-score">15/25</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="component-card failure">
+                    <div class="component-header">
+                        <div class="component-info">
+                            <h4>DMARC Records</h4>
+                            <p>Domain-based Message Authentication</p>
+                        </div>
+                        <div class="component-status">
+                            <span class="status-icon error">❌</span>
+                            <span class="component-score">0/25</span>
+                            <span class="expand-icon">▼</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

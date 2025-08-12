@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rule Weights Fix Test - DMARC Scoring</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .section {
+            margin-bottom: 3rem;
+        }
+        
+        .section h3 {
+            color: #2c3e50;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .issue-card {
+            background: #fff5f5;
+            border: 1px solid #dc3545;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .issue-card h4 {
+            color: #dc3545;
+            margin: 0 0 1rem 0;
+        }
+        
+        .fix-card {
+            background: #d4edda;
+            border: 1px solid #28a745;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .fix-card h4 {
+            color: #28a745;
+            margin: 0 0 1rem 0;
+        }
+        
+        .scoring-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        
+        .scoring-table th,
+        .scoring-table td {
+            border: 1px solid #e9ecef;
+            padding: 0.75rem;
+            text-align: left;
+        }
+        
+        .scoring-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .scoring-table .policy-none {
+            background: #fff3cd;
+        }
+        
+        .scoring-table .policy-reject {
+            background: #d4edda;
+        }
+        
+        .scoring-table .total-row {
+            font-weight: 600;
+            background: #e9ecef;
+        }
+        
+        .code-block {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 5px;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            margin: 1rem 0;
+        }
+        
+        .highlight {
+            background: #fff3cd;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Rule Weights Fix - DMARC Scoring Issue</h1>
+        
+        <!-- Problem Description -->
+        <div class="section">
+            <div class="issue-card">
+                <h4>🚨 Problem Identified</h4>
+                <p><strong>Issue:</strong> A domain with DMARC policy <code>p=none</code> was showing a perfect 25/25 score instead of the correct 23/30 score.</p>
+                
+                <h5>Root Causes:</h5>
+                <ul>
+                    <li><strong>Frontend hardcoded max score:</strong> All components were capped at 25 points regardless of their actual max score</li>
+                    <li><strong>Frontend hardcoded display:</strong> All components showed "/25" instead of their actual max scores</li>
+                    <li><strong>Scoring structure mismatch:</strong> DMARC has a max score of 30 in the backend but was being treated as 25 in the frontend</li>
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Rule Weights Analysis -->
+        <div class="section">
+            <h3>📊 DMARC Rule Weights Analysis</h3>
+            <table class="scoring-table">
+                <thead>
+                    <tr>
+                        <th>Component</th>
+                        <th>Rule</th>
+                        <th>Condition</th>
+                        <th>Points</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>DMARC</td>
+                        <td>base</td>
+                        <td>has_dmarc_records</td>
+                        <td>15</td>
+                        <td>Basic DMARC record presence</td>
+                    </tr>
+                    <tr class="policy-none">
+                        <td>DMARC</td>
+                        <td>policy</td>
+                        <td>dmarc_policy == 'none'</td>
+                        <td>2</td>
+                        <td>Monitoring only (p=none)</td>
+                    </tr>
+                    <tr class="policy-reject">
+                        <td>DMARC</td>
+                        <td>policy</td>
+                        <td>dmarc_policy == 'reject'</td>
+                        <td>8</td>
+                        <td>Strictest policy (p=reject)</td>
+                    </tr>
+                    <tr>
+                        <td>DMARC</td>
+                        <td>coverage</td>
+                        <td>dmarc_percentage == 100</td>
+                        <td>3</td>
+                        <td>Full coverage (pct=100)</td>
+                    </tr>
+                    <tr>
+                        <td>DMARC</td>
+                        <td>reporting</td>
+                        <td>dmarc_rua_present</td>
+                        <td>2</td>
+                        <td>Aggregate reports configured (rua=)</td>
+                    </tr>
+                    <tr>
+                        <td>DMARC</td>
+                        <td>reporting</td>
+                        <td>dmarc_ruf_present</td>
+                        <td>1</td>
+                        <td>Forensic reports configured (ruf=)</td>
+                    </tr>
+                    <tr class="total-row">
+                        <td colspan="3"><strong>Total for p=none:</strong></td>
+                        <td><strong>23</strong></td>
+                        <td><strong>15 + 2 + 3 + 2 + 1 = 23 points</strong></td>
+                    </tr>
+                    <tr class="total-row">
+                        <td colspan="3"><strong>Total for p=reject:</strong></td>
+                        <td><strong>29</strong></td>
+                        <td><strong>15 + 8 + 3 + 2 + 1 = 29 points</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Scoring Structure -->
+        <div class="section">
+            <h3>⚙️ Backend Scoring Structure</h3>
+            <div class="code-block">
+{
+  "components": {
+    "mx": {
+      "max_score": 25,
+      "rules": ["base", "redundancy", "provider", "security"]
+    },
+    "spf": {
+      "max_score": 25,
+      "rules": ["base", "policy", "mechanisms", "security"]
+    },
+    <span class="highlight">"dmarc": {
+      "max_score": 30,
+      "rules": ["base", "policy", "coverage", "reporting"]
+    },</span>
+    "dkim": {
+      "max_score": 25,
+      "rules": ["base", "selectors", "algorithm", "key_length"]
+    }
+  }
+}
+            </div>
+            <p><strong>Note:</strong> DMARC has a higher max score (30) than other components (25) to account for its additional complexity and importance.</p>
+        </div>
+        
+        <!-- Fixes Applied -->
+        <div class="section">
+            <h3>🔧 Fixes Applied</h3>
+            
+            <div class="fix-card">
+                <h4>1. Updated getComponentScore Function</h4>
+                <div class="code-block">
+// Before (hardcoded to 25)
+const getComponentScore = (base, bonus = 0) => {
+  const total = base + bonus;
+  const max = 25; // ❌ Hardcoded for all components
+  return Math.min(total, max);
+};
+
+// After (component-specific max scores)
+const getComponentScore = (base, bonus = 0, componentName = null) => {
+  const total = base + bonus;
+  let max = 25; // Default max
+  
+  // Set component-specific max scores
+  if (componentName === 'dmarc') {
+    max = 30; // ✅ DMARC has higher max score
+  }
+  
+  return Math.min(total, max);
+};
+                </div>
+            </div>
+            
+            <div class="fix-card">
+                <h4>2. Added getComponentMaxScore Function</h4>
+                <div class="code-block">
+const getComponentMaxScore = (componentName) => {
+  switch (componentName) {
+    case 'dmarc':
+      return 30; // ✅ DMARC max score
+    default:
+      return 25; // ✅ Other components max score
+  }
+};
+                </div>
+            </div>
+            
+            <div class="fix-card">
+                <h4>3. Updated Score Display</h4>
+                <div class="code-block">
+// Before (hardcoded /25)
+{getComponentScore(base, bonus)}/25
+
+// After (dynamic max score)
+{getComponentScore(base, bonus, 'dmarc')}/{getComponentMaxScore('dmarc')}
+// Shows: 23/30 for DMARC instead of 23/25
+                </div>
+            </div>
+            
+            <div class="fix-card">
+                <h4>4. Updated Icon Thresholds</h4>
+                <div class="code-block">
+// Updated thresholds to account for different max scores
+if (score >= 20) return '✅'; // 20/25 = 80% for most components
+if (score >= 24) return '✅'; // 24/30 = 80% for DMARC
+if (score >= 13) return '✅'; // 13/25 = 52% for most components  
+if (score >= 15) return '✅'; // 15/30 = 50% for DMARC
+                </div>
+            </div>
+        </div>
+        
+        <!-- Expected Results -->
+        <div class="section">
+            <h3>✅ Expected Results After Fix</h3>
+            <table class="scoring-table">
+                <thead>
+                    <tr>
+                        <th>DMARC Policy</th>
+                        <th>Base Points</th>
+                        <th>Bonus Points</th>
+                        <th>Total Score</th>
+                        <th>Display</th>
+                        <th>Icon</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="policy-none">
+                        <td>p=none</td>
+                        <td>23</td>
+                        <td>0</td>
+                        <td>23</td>
+                        <td>23/30</td>
+                        <td>⚠️ (Warning)</td>
+                    </tr>
+                    <tr class="policy-reject">
+                        <td>p=reject</td>
+                        <td>29</td>
+                        <td>0</td>
+                        <td>29</td>
+                        <td>29/30</td>
+                        <td>✅ (Success)</td>
+                    </tr>
+                    <tr>
+                        <td>No DMARC</td>
+                        <td>0</td>
+                        <td>0</td>
+                        <td>0</td>
+                        <td>0/30</td>
+                        <td>❌ (Error)</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <p><strong>Key Improvement:</strong> A domain with <code>p=none</code> DMARC policy will now correctly show <strong>23/30</strong> instead of the misleading <strong>25/25</strong>, providing accurate feedback about the security posture.</p>
+        </div>
+        
+        <!-- Testing Instructions -->
+        <div class="section">
+            <h3>🧪 Testing Instructions</h3>
+            <ol>
+                <li><strong>Test a domain with p=none DMARC:</strong> Should show 23/30 (not 25/25)</li>
+                <li><strong>Test a domain with p=reject DMARC:</strong> Should show 29/30 (not 25/25)</li>
+                <li><strong>Test a domain without DMARC:</strong> Should show 0/30 (not 0/25)</li>
+                <li><strong>Verify other components:</strong> MX, SPF, DKIM should still show /25</li>
+                <li><strong>Check icon colors:</strong> Icons should reflect the actual score percentages</li>
+            </ol>
+        </div>
+    </div>
+</body>
+</html>

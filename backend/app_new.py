@@ -88,6 +88,10 @@ def get_mx_details(domain):
                 'server': str(mx.exchange),
                 'valid': True
             })
+        
+        # Sort MX records by priority (lower priority number = higher priority)
+        records.sort(key=lambda x: x['priority'])
+        
         return {
             'has_mx': True,
             'records': records,

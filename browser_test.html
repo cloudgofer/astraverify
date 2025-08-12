@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 AstraVerify API Test</h1>
+    
+    <div class="test-section info">
+        <h3>📊 Environment Info</h3>
+        <p><strong>User Agent:</strong> <span id="userAgent"></span></p>
+        <p><strong>Current URL:</strong> <span id="currentUrl"></span></p>
+        <p><strong>Fetch Available:</strong> <span id="fetchAvailable"></span></p>
+    </div>
+
+    <div class="test-section">
+        <h3>🧪 API Connectivity Test</h3>
+        <button onclick="testBasicConnectivity()">Test Basic Connectivity</button>
+        <button onclick="testProgressiveAPI()">Test Progressive API</button>
+        <button onclick="testDKIMAPI()">Test DKIM API</button>
+        <div id="connectivityResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>🌐 Network Diagnostics</h3>
+        <button onclick="testNetworkDiagnostics()">Run Network Diagnostics</button>
+        <div id="networkResults"></div>
+    </div>
+
+    <script>
+        // Environment info
+        document.getElementById('userAgent').textContent = navigator.userAgent;
+        document.getElementById('currentUrl').textContent = window.location.href;
+        document.getElementById('fetchAvailable').textContent = typeof fetch !== 'undefined' ? '✅ Available' : '❌ Not Available';
+
+        const config = {
+            API_BASE_URL: 'http://localhost:8080',
+            ENDPOINTS: {
+                CHECK_DOMAIN: '/api/check'
+            }
+        };
+
+        function logResult(containerId, message, isError = false) {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = isError ? 'error' : 'success';
+            div.innerHTML = `<pre>${new Date().toLocaleTimeString()}: ${message}</pre>`;
+            container.appendChild(div);
+        }
+
+        async function testBasicConnectivity() {
+            const containerId = 'connectivityResults';
+            logResult(containerId, '🔄 Testing basic connectivity...', false);
+            
+            try {
+                const response = await fetch(`${config.API_BASE_URL}/api/check?domain=example.com`);
+                logResult(containerId, `✅ Basic API call successful! Status: ${response.status}`, false);
+                
+                const data = await response.json();
+                logResult(containerId, `📊 Response data preview: ${JSON.stringify(data).substring(0, 200)}...`, false);
+                
+            } catch (error) {
+                logResult(containerId, `❌ Basic API call failed: ${error.message}`, true);
+                logResult(containerId, `🔍 Error details: ${error.name} - ${error.stack}`, true);
+            }
+        }
+
+        async function testProgressiveAPI() {
+            const containerId = 'connectivityResults';
+            logResult(containerId, '🔄 Testing progressive API...', false);
+            
+            try {
+                const progressiveUrl = `${config.API_BASE_URL}${config.ENDPOINTS.CHECK_DOMAIN}?domain=example.com&progressive=true`;
+                logResult(containerId, `📡 Testing URL: ${progressiveUrl}`, false);
+                
+                const response = await fetch(progressiveUrl);
+                logResult(containerId, `📊 Response status: ${response.status}`, false);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                logResult(containerId, `✅ Progressive API successful! Progressive: ${data.progressive}`, false);
+                
+            } catch (error) {
+                logResult(containerId, `❌ Progressive API failed: ${error.message}`, true);
+            }
+        }
+
+        async function testDKIMAPI() {
+            const containerId = 'connectivityResults';
+            logResult(containerId, '🔄 Testing DKIM API...', false);
+            
+            try {
+                const dkimUrl = `${config.API_BASE_URL}/api/check/dkim?domain=example.com`;
+                logResult(containerId, `📡 Testing URL: ${dkimUrl}`, false);
+                
+                const response = await fetch(dkimUrl);
+                logResult(containerId, `📊 Response status: ${response.status}`, false);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                logResult(containerId, `✅ DKIM API successful! Selectors checked: ${data.dkim?.selectors_checked || 0}`, false);
+                
+            } catch (error) {
+                logResult(containerId, `❌ DKIM API failed: ${error.message}`, true);
+            }
+        }
+
+        async function testNetworkDiagnostics() {
+            const containerId = 'networkResults';
+            logResult(containerId, '🔍 Running network diagnostics...', false);
+            
+            // Test if localhost is reachable
+            try {
+                const response = await fetch('http://localhost:8080', { 
+                    method: 'HEAD',
+                    mode: 'cors'
+                });
+                logResult(containerId, `✅ Backend server reachable: ${response.status}`, false);
+            } catch (error) {
+                logResult(containerId, `❌ Backend server not reachable: ${error.message}`, true);
+            }
+            
+            // Test CORS
+            try {
+                const response = await fetch(`${config.API_BASE_URL}/api/check?domain=test.com`, {
+                    method: 'GET',
+                    mode: 'cors',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                logResult(containerId, `✅ CORS test successful: ${response.status}`, false);
+            } catch (error) {
+                logResult(containerId, `❌ CORS test failed: ${error.message}`, true);
+            }
+            
+            // Test with different modes
+            const modes = ['cors', 'no-cors', 'same-origin'];
+            for (const mode of modes) {
+                try {
+                    const response = await fetch(`${config.API_BASE_URL}/api/check?domain=test.com`, {
+                        method: 'GET',
+                        mode: mode
+                    });
+                    logResult(containerId, `✅ Mode '${mode}' successful: ${response.status}`, false);
+                } catch (error) {
+                    logResult(containerId, `❌ Mode '${mode}' failed: ${error.message}`, true);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

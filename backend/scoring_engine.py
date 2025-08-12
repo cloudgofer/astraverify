@@ -263,13 +263,14 @@ class ScoringEngine:
         if not dkim_data.get('has_dkim', False):
             return {'base_score': 0, 'bonus_score': 0, 'details': {}}
         
-        # Base score
+        # Base score - only basic DKIM record presence
         base_score += self.config.get_rule_points('dkim', 'base', 'has_dkim_records')
         details['base'] = {
             'points': self.config.get_rule_points('dkim', 'base', 'has_dkim_records'),
             'description': 'Basic DKIM record presence'
         }
         
+        # Bonus scores - selectors, algorithm, and key length
         # Selectors score
         selector_count = len(dkim_data.get('records', []))
         if selector_count > 1:
@@ -279,7 +280,7 @@ class ScoringEngine:
         else:
             points = 0
         
-        base_score += points
+        bonus_score += points
         details['selectors'] = {
             'points': points,
             'description': f'{selector_count} DKIM selectors'
@@ -293,7 +294,7 @@ class ScoringEngine:
         else:
             points = self.config.get_rule_points('dkim', 'algorithm', 'weak_algorithm')
         
-        base_score += points
+        bonus_score += points
         details['algorithm'] = {
             'points': points,
             'description': f'DKIM algorithm: {algorithm}'
@@ -306,7 +307,7 @@ class ScoringEngine:
         else:
             points = self.config.get_rule_points('dkim', 'key_length', 'key_length < 2048')
         
-        base_score += points
+        bonus_score += points
         details['key_length'] = {
             'points': points,
             'description': f'DKIM key length: {key_length} bits'
