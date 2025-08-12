@@ -1124,7 +1124,7 @@ function App() {
                   📧 Email Security Report
                 </button>
                 <p className="email-report-note">
-                  Get a detailed PDF report of this security analysis sent to your email
+                  Get a detailed report of this security analysis sent to your email
                 </p>
               </div>
             )}
