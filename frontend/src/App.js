@@ -419,10 +419,12 @@ function App() {
   useEffect(() => {
     const fetchStatistics = async () => {
       try {
-        const response = await fetch(`${config.API_BASE_URL}/api/statistics`);
+        const response = await fetch(`${config.API_BASE_URL}/api/public/statistics`);
         if (response.ok) {
           const data = await response.json();
-          setStatistics(data);
+          if (data.success && data.data) {
+            setStatistics(data.data);
+          }
         }
       } catch (error) {
         console.error('Error fetching statistics:', error);
