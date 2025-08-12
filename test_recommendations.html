@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recommendations Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Recommendations Debug Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Direct API Call</h2>
+        <button onclick="testDirectAPI()">Test Direct API</button>
+        <div id="direct-api-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Progressive Flow Simulation</h2>
+        <button onclick="testProgressiveFlow()">Test Progressive Flow</button>
+        <div id="progressive-result"></div>
+    </div>
+
+    <script>
+        async function testDirectAPI() {
+            const resultDiv = document.getElementById('direct-api-result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                const response = await fetch('http://localhost:8080/api/check/dkim?domain=mysql.com');
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h3>✅ API Response:</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                        <p><strong>Has recommendations:</strong> ${!!data.recommendations}</p>
+                        <p><strong>Recommendations count:</strong> ${data.recommendations?.length || 0}</p>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h3>❌ API Error:</h3>
+                        <pre>${error.message}</pre>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testProgressiveFlow() {
+            const resultDiv = document.getElementById('progressive-result');
+            resultDiv.innerHTML = 'Testing progressive flow...';
+            
+            try {
+                // Step 1: Initial progressive response
+                const initialResponse = await fetch('http://localhost:8080/api/check?domain=mysql.com&progressive=true');
+                const initialData = await initialResponse.json();
+                
+                console.log('Initial data:', initialData);
+                
+                // Step 2: DKIM completion
+                const dkimResponse = await fetch('http://localhost:8080/api/check/dkim?domain=mysql.com');
+                const dkimData = await dkimResponse.json();
+                
+                console.log('DKIM data:', dkimData);
+                
+                // Step 3: Merge results (simulating frontend behavior)
+                const mergedResult = {
+                    ...initialData,
+                    dkim: dkimData.dkim,
+                    email_provider: dkimData.email_provider,
+                    security_score: dkimData.security_score,
+                    recommendations: dkimData.recommendations || [],
+                    progressive: false,
+                    message: `Analysis complete! Checked ${dkimData.dkim.selectors_checked || 0} DKIM selectors.`
+                };
+                
+                console.log('Merged result:', mergedResult);
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h3>✅ Progressive Flow Test:</h3>
+                        <h4>Initial Data:</h4>
+                        <pre>${JSON.stringify(initialData, null, 2)}</pre>
+                        <h4>DKIM Data:</h4>
+                        <pre>${JSON.stringify(dkimData, null, 2)}</pre>
+                        <h4>Merged Result:</h4>
+                        <pre>${JSON.stringify(mergedResult, null, 2)}</pre>
+                        <p><strong>Final has recommendations:</strong> ${!!mergedResult.recommendations}</p>
+                        <p><strong>Final recommendations count:</strong> ${mergedResult.recommendations?.length || 0}</p>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h3>❌ Progressive Flow Error:</h3>
+                        <pre>${error.message}</pre>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 flask==3.1.1
 flask-cors==6.0.1
 dnspython==2.7.0
+aiodns==3.1.1
 google-cloud-firestore==2.18.0
 google-cloud-secret-manager==2.20.0

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security UI Fixes Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .section {
+            margin-bottom: 3rem;
+        }
+        
+        .section h3 {
+            color: #2c3e50;
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Security Issues Section Styles */
+        .security-issues {
+            padding: 2rem;
+            background: #fff5f5;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .issues-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .issue-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            border-left: 4px solid #dc3545;
+            box-shadow: 0 2px 8px rgba(220, 53, 69, 0.1);
+        }
+        
+        .issue-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .issue-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        
+        .issue-title {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .issue-content p {
+            margin: 0;
+            color: #6c757d;
+            line-height: 1.6;
+        }
+        
+        /* Security Components Section Styles */
+        .security-components {
+            padding: 2rem;
+            background: white;
+        }
+        
+        .components-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        .component-card {
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .component-card.success {
+            border-color: #28a745;
+            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.1);
+        }
+        
+        .component-card.failure {
+            border-color: #dc3545;
+            box-shadow: 0 2px 8px rgba(220, 53, 69, 0.1);
+        }
+        
+        .component-header {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.3s ease;
+        }
+        
+        .component-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex: 1;
+        }
+        
+        .component-info h4 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 1.2rem;
+            min-width: 120px;
+        }
+        
+        .component-info p {
+            margin: 0;
+            color: #6c757d;
+            font-size: 0.9rem;
+            flex: 1;
+        }
+        
+        .component-status {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+        
+        .status-icon {
+            font-size: 1.5rem;
+            display: inline-block;
+            width: 24px;
+            text-align: center;
+        }
+        
+        .status-icon.success {
+            color: #28a745;
+        }
+        
+        .status-icon.warning {
+            color: #ffc107;
+        }
+        
+        .status-icon.error {
+            color: #dc3545;
+        }
+        
+        .component-score {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
+        
+        .component-expanded-content {
+            padding: 1.5rem;
+            background: white;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .status-message {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.8rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-message.failure {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Security Issues Section - Fixed with titles next to icons -->
+        <div class="section">
+            <div class="security-issues">
+                <h3>Security Issues</h3>
+                <div class="issues-list">
+                    <div class="issue-card">
+                        <div class="issue-header">
+                            <div class="issue-icon">🚨</div>
+                            <h4 class="issue-title">Missing SPF Record</h4>
+                        </div>
+                        <div class="issue-content">
+                            <p>Your domain is vulnerable to email spoofing. Other servers don't know which servers are authorized to send emails for your domain.</p>
+                        </div>
+                    </div>
+                    <div class="issue-card">
+                        <div class="issue-header">
+                            <div class="issue-icon">⚠️</div>
+                            <h4 class="issue-title">Weak DMARC Policy</h4>
+                        </div>
+                        <div class="issue-content">
+                            <p>Your DMARC policy is set to monitor only. Consider implementing a stricter policy to actively reject unauthorized emails.</p>
+                        </div>
+                    </div>
+                    <div class="issue-card">
+                        <div class="issue-header">
+                            <div class="issue-icon">ℹ️</div>
+                            <h4 class="issue-title">DKIM Configuration</h4>
+                        </div>
+                        <div class="issue-content">
+                            <p>Consider implementing multiple DKIM selectors for better email authentication coverage and rotation capabilities.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Security Components Section - Fixed with proper icon colors -->
+        <div class="section">
+            <div class="security-components">
+                <h3>Security Components</h3>
+                <div class="components-grid">
+                    <!-- MX Records Component - Success -->
+                    <div class="component-card success">
+                        <div class="component-header">
+                            <div class="component-info">
+                                <h4>MX Records</h4>
+                                <p>Mail Exchange Configuration</p>
+                            </div>
+                            <div class="component-status">
+                                <span class="status-icon success">✅</span>
+                                <span class="component-score">25/25</span>
+                            </div>
+                        </div>
+                        <div class="component-expanded-content">
+                            <div class="status-message success">
+                                <span class="status-icon success">✅</span>
+                                <span>Your domain is properly configured to receive emails. Email servers know where to deliver messages for your domain.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SPF Records Component - Failure -->
+                    <div class="component-card failure">
+                        <div class="component-header">
+                            <div class="component-info">
+                                <h4>SPF Records</h4>
+                                <p>Sender Policy Framework</p>
+                            </div>
+                            <div class="component-status">
+                                <span class="status-icon error">❌</span>
+                                <span class="component-score">0/25</span>
+                            </div>
+                        </div>
+                        <div class="component-expanded-content">
+                            <div class="status-message failure">
+                                <span class="status-icon error">❌</span>
+                                <span>Your domain is vulnerable to email spoofing. Other servers don't know which servers are authorized to send emails for your domain.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- DKIM Records Component - Warning -->
+                    <div class="component-card success">
+                        <div class="component-header">
+                            <div class="component-info">
+                                <h4>DKIM Records</h4>
+                                <p>DomainKeys Identified Mail</p>
+                            </div>
+                            <div class="component-status">
+                                <span class="status-icon warning">⚠️</span>
+                                <span class="component-score">15/25</span>
+                            </div>
+                        </div>
+                        <div class="component-expanded-content">
+                            <div class="status-message success">
+                                <span class="status-icon success">✅</span>
+                                <span>Your domain's emails are digitally signed for authentication. Recipients can verify that emails haven't been tampered with.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- DMARC Records Component - Failure -->
+                    <div class="component-card failure">
+                        <div class="component-header">
+                            <div class="component-info">
+                                <h4>DMARC Records</h4>
+                                <p>Domain-based Message Authentication</p>
+                            </div>
+                            <div class="component-status">
+                                <span class="status-icon error">❌</span>
+                                <span class="component-score">0/25</span>
+                            </div>
+                        </div>
+                        <div class="component-expanded-content">
+                            <div class="status-message failure">
+                                <span class="status-icon error">❌</span>
+                                <span>Your domain lacks email authentication reporting. You cannot monitor or enforce email authentication policies.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Summary of Changes -->
+        <div class="section">
+            <h3>Summary of UI Fixes</h3>
+            <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 10px;">
+                <h4>✅ Security Issues Section Fixes:</h4>
+                <ul>
+                    <li><strong>Recommendation titles</strong> now appear next to the icons in a horizontal layout</li>
+                    <li>Icons and titles are properly aligned in the <code>.issue-header</code> container</li>
+                    <li>Better visual hierarchy with the title prominently displayed</li>
+                </ul>
+                
+                <h4>✅ Security Components Section Fixes:</h4>
+                <ul>
+                    <li><strong>Status message icons</strong> now show appropriate colors based on component status</li>
+                    <li>Success messages show green checkmarks (✅)</li>
+                    <li>Error/Warning messages show red X marks (❌) instead of always showing green</li>
+                    <li>Icons dynamically change based on the component's enabled status</li>
+                </ul>
+                
+                <h4>🎨 Visual Improvements:</h4>
+                <ul>
+                    <li>Better contrast and readability</li>
+                    <li>Consistent icon usage throughout the interface</li>
+                    <li>Clear visual distinction between success and failure states</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

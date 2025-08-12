@@ -1,311 +1,199 @@
-# AstraVerify Branching Strategy
+# AstraVerify Git Branching Strategy
 
 ## Overview
-This document outlines the branching strategy for AstraVerify, following a monthly release cycle with proper stabilization and development workflows.
+This document outlines the Git branching strategy for AstraVerify, ensuring safe deployments, easy rollbacks, and proper version control.
 
 ## Branch Structure
 
 ### Main Branches
+- **`main`** - Production-ready code, always deployable
+- **`develop`** - Integration branch for features, staging deployments
 
-#### `main` (Production)
-- **Purpose**: Production-ready code
-- **Source**: `release/YYYY-MM` branches
-- **Protection**: Requires pull request approval
-- **Deployment**: Automatic deployment to production
-
-#### `develop` (Development)
-- **Purpose**: Integration branch for ongoing development
-- **Source**: Feature branches
-- **Protection**: Requires pull request approval
-- **Deployment**: Automatic deployment to staging
-
-### Release Branches
-
-#### `release/YYYY-MM` (Monthly Release)
-- **Format**: `release/2025-08`, `release/2025-09`, etc.
-- **Purpose**: Stabilization branch for monthly releases
-- **Source**: `develop` branch
-- **Target**: `main` branch
-- **Lifetime**: Created 1-2 weeks before release, merged to main and deleted after release
-
-**Examples:**
-- `release/2025-08` - August 2025 release
-- `release/2025-09` - September 2025 release
-- `release/2025-10` - October 2025 release
-
-### Feature Branches
-
-#### `feature/description`
-- **Format**: `feature/email-enhancements`, `feature/security-scoring`, etc.
-- **Purpose**: Individual features or bug fixes
-- **Source**: `develop` branch
-- **Target**: `develop` branch
-- **Naming**: Use descriptive names with hyphens
-
-**Examples:**
-- `feature/email-report-enhancements`
-- `feature/security-score-calculation`
-- `feature/mobile-responsive-improvements`
-- `feature/bugfix-smtp-authentication`
-
-## Workflow
-
-### Monthly Release Process
-
-1. **Release Preparation** (1-2 weeks before release)
-   ```bash
-   git checkout develop
-   git pull origin develop
-   git checkout -b release/2025-08
-   git push -u origin release/2025-08
-   ```
-
-2. **Stabilization Period**
-   - Only bug fixes and critical updates
-   - No new features
-   - Testing and validation
-   - Documentation updates
-
-3. **Release to Production**
-   ```bash
-   git checkout main
-   git merge release/2025-08
-   git push origin main
-   git tag v1.0.0  # or appropriate version
-   git push origin v1.0.0
-   ```
-
-4. **Cleanup**
-   ```bash
-   git branch -d release/2025-08
-   git push origin --delete release/2025-08
-   ```
-
-### Feature Development Process
-
-1. **Create Feature Branch**
-   ```bash
-   git checkout develop
-   git pull origin develop
-   git checkout -b feature/new-feature
-   ```
-
-2. **Development**
-   - Make changes
-   - Commit frequently with descriptive messages
-   - Keep branch up to date with develop
-
-3. **Complete Feature**
-   ```bash
-   git checkout develop
-   git pull origin develop
-   git checkout feature/new-feature
-   git rebase develop
-   git push origin feature/new-feature
-   ```
-
-4. **Create Pull Request**
-   - Target: `develop`
-   - Review and approval required
-   - Automated testing
-
-### Hotfix Process
-
-1. **Create Hotfix Branch**
-   ```bash
-   git checkout main
-   git pull origin main
-   git checkout -b hotfix/critical-bug
-   ```
-
-2. **Fix and Test**
-   - Make minimal changes
-   - Test thoroughly
-   - Update version if needed
-
-3. **Deploy Hotfix**
-   ```bash
-   git checkout main
-   git merge hotfix/critical-bug
-   git push origin main
-   git checkout develop
-   git merge hotfix/critical-bug
-   git push origin develop
-   ```
+### Supporting Branches
+- **`feature/*`** - Individual feature development
+- **`hotfix/*`** - Critical production fixes
+- **`release/*`** - Release preparation branches
 
 ## Branch Protection Rules
 
 ### Main Branch
 - Requires pull request reviews
 - Requires status checks to pass
-- No direct pushes
-- Requires up-to-date branches
+- No direct pushes allowed
+- Auto-delete head branches
 
 ### Develop Branch
 - Requires pull request reviews
 - Requires status checks to pass
-- No direct pushes
+- Allows force pushes for emergency fixes
 
-### Release Branches
-- Requires pull request reviews
-- Requires status checks to pass
-- No direct pushes
+## Tagging Strategy
 
-## Versioning Strategy
+### Version Tags
+- **Format**: `v{major}.{minor}.{patch}`
+- **Example**: `v1.2.3`
+- **When**: Every production deployment
 
-### Semantic Versioning (SemVer)
-- **Format**: `MAJOR.MINOR.PATCH`
-- **Examples**: `1.0.0`, `1.1.0`, `1.1.1`
+### Deployment Tags
+- **Format**: `deploy/{environment}/{date}-{time}`
+- **Examples**: 
+  - `deploy/prod/2025-08-11-1430`
+  - `deploy/staging/2025-08-11-1000`
 
-### Monthly Release Versioning
-- **Format**: `YYYY.MM.PATCH`
-- **Examples**: `2025.8.0`, `2025.8.1`, `2025.9.0`
+### Feature Tags
+- **Format**: `feature/{feature-name}/{date}`
+- **Example**: `feature/mobile-ui/2025-08-11`
 
-## Commit Message Convention
+## Deployment Workflows
 
-### Format
-```
-type(scope): description
+### Staging Deployment (Monthly)
+1. Create feature branch from `develop`
+2. Develop and test features
+3. Create PR to `develop`
+4. Merge to `develop`
+5. **Monthly**: Create PR from `develop` to `main`
+6. Tag with `deploy/staging/{date}-{time}`
+7. Deploy to staging environment
 
-[optional body]
+### Production Deployment
+1. Create release branch from `develop`
+2. Final testing and bug fixes
+3. Create PR to `main`
+4. Merge to `main`
+5. Tag with version tag (e.g., `v1.2.3`)
+6. Tag with deployment tag `deploy/prod/{date}-{time}`
+7. Deploy to production
 
-[optional footer]
-```
+## Rollback Strategy
 
-### Types
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `style`: Code style changes
-- `refactor`: Code refactoring
-- `test`: Test changes
-- `chore`: Maintenance tasks
-
-### Examples
-```
-feat(email): add professional sender name to emails
-fix(smtp): resolve authentication issue with DreamHost
-docs(readme): update deployment instructions
-style(ui): improve mobile responsiveness
-```
-
-## Monthly Release Schedule
-
-### August 2025 (Current)
-- **Release Branch**: `release/2025-08`
-- **Target Release Date**: End of August 2025
-- **Stabilization Period**: 1-2 weeks before release
-
-### September 2025
-- **Release Branch**: `release/2025-09`
-- **Target Release Date**: End of September 2025
-- **Stabilization Period**: 1-2 weeks before release
-
-### October 2025
-- **Release Branch**: `release/2025-10`
-- **Target Release Date**: End of October 2025
-- **Stabilization Period**: 1-2 weeks before release
-
-## Deployment Strategy
-
-### Environment Mapping
-
-#### LOCAL Environment
-- **Purpose**: Development and testing
-- **Branch**: Any branch (develop, feature branches)
-- **Deployment**: Local development server
-- **Script**: `./deploy/deploy_local.sh`
-- **Frontend**: http://localhost:3000
-- **Backend**: http://localhost:8080
-
-#### STAGING Environment
-- **Purpose**: Pre-production testing and validation
-- **Branch**: `release/YYYY-MM` branches only
-- **Deployment**: GCP Cloud Run (staging services)
-- **Script**: `./deploy/deploy_staging.sh`
-- **Services**: `astraverify-frontend-staging`, `astraverify-backend-staging`
-- **Configuration**: Staging-specific settings
-
-#### PRODUCTION Environment
-- **Purpose**: Live production environment
-- **Branch**: `main` branch only
-- **Deployment**: GCP Cloud Run (production services)
-- **Script**: `./deploy/deploy_production.sh`
-- **Services**: `astraverify-frontend`, `astraverify-backend`
-- **Configuration**: Production settings with higher resources
-
-### Deployment Workflow
-
-```
-LOCAL Development → STAGING Testing → PRODUCTION Release
-     ↓                    ↓                    ↓
-Feature Branches → Release Branches → Main Branch
-     ↓                    ↓                    ↓
-deploy_local.sh → deploy_staging.sh → deploy_production.sh
-```
-
-### Monthly Release Process
-
-1. **Development Phase** (ongoing)
-   - Work on feature branches
-   - Test locally with `deploy_local.sh`
-   - Merge to `develop` when ready
-
-2. **Stabilization Phase** (1-2 weeks before release)
-   - Create release branch: `release/2025-08`
-   - Deploy to STAGING: `./deploy/deploy_staging.sh`
-   - Testing and bug fixes only
-   - No new features
-
-3. **Production Release** (end of month)
-   - Merge release branch to `main`
-   - Deploy to PRODUCTION: `./deploy/deploy_production.sh`
-   - Tag release with version
-   - Clean up release branch
-
-## Current Branch Status
-
-- ✅ `main` - Production branch (PRODUCTION deployment)
-- ✅ `develop` - Development integration branch (LOCAL deployment)
-- ✅ `release/2025-08` - August 2025 stabilization branch (STAGING deployment)
-
-## Next Steps
-
-1. **Set up branch protection rules** in GitHub
-2. **Configure automated testing** for pull requests
-3. **Set up deployment pipelines** for each branch
-4. **Create feature branches** for ongoing development
-5. **Schedule monthly release reviews**
-
-## Useful Commands
-
-### View All Branches
+### Quick Rollback
 ```bash
-git branch -a
+# Find the previous deployment tag
+git tag -l "deploy/prod/*" --sort=-version:refname | head -2
+
+# Rollback to previous version
+git checkout <previous-deployment-tag>
+git checkout -b hotfix/rollback-$(date +%Y%m%d)
+git push origin hotfix/rollback-$(date +%Y%m%d)
 ```
 
-### Switch Between Branches
+### Emergency Hotfix
+```bash
+# Create hotfix branch from main
+git checkout main
+git checkout -b hotfix/emergency-fix
+# Make changes
+git commit -m "Emergency fix: description"
+git tag v1.2.4
+git push origin hotfix/emergency-fix
+git push origin v1.2.4
+```
+
+## Automated Scripts
+
+### Pre-deployment Checklist
+- [ ] All tests passing
+- [ ] Code review completed
+- [ ] Security scan passed
+- [ ] Performance tests passed
+- [ ] Documentation updated
+
+### Post-deployment Checklist
+- [ ] Health checks passing
+- [ ] Monitoring alerts configured
+- [ ] Rollback plan documented
+- [ ] Deployment tag created
+
+## Monthly Branch Check-in Process
+
+### Staging Deployments
+1. **Frequency**: Monthly
+2. **Branch**: `develop` → `main`
+3. **Tagging**: `deploy/staging/{YYYY-MM-DD}-{HHMM}`
+4. **Automation**: GitHub Actions workflow
+
+### Production Deployments
+1. **Frequency**: As needed (after staging validation)
+2. **Branch**: `main`
+3. **Tagging**: 
+   - Version tag: `v{major}.{minor}.{patch}`
+   - Deployment tag: `deploy/prod/{YYYY-MM-DD}-{HHMM}`
+4. **Automation**: GitHub Actions workflow
+
+## Git Commands Reference
+
+### Creating Feature Branches
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/feature-name
+```
+
+### Creating Release Branches
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b release/v1.2.3
+```
+
+### Creating Hotfix Branches
 ```bash
 git checkout main
-git checkout develop
-git checkout release/2025-08
+git pull origin main
+git checkout -b hotfix/critical-fix
 ```
 
-### Create New Feature Branch
+### Tagging Commands
 ```bash
-git checkout develop
-git pull origin develop
-git checkout -b feature/your-feature-name
+# Version tag
+git tag -a v1.2.3 -m "Release version 1.2.3"
+git push origin v1.2.3
+
+# Deployment tag
+git tag deploy/prod/2025-08-11-1430
+git push origin deploy/prod/2025-08-11-1430
 ```
 
-### Update Branch with Latest Changes
-```bash
-git checkout your-branch
-git pull origin develop
-git rebase develop
-```
+## GitHub Actions Workflows
 
-### View Branch History
-```bash
-git log --oneline --graph --all
-```
+### Staging Deployment Workflow
+- Triggers on PR merge to `develop`
+- Runs tests and security scans
+- Creates staging deployment tag
+- Deploys to staging environment
+
+### Production Deployment Workflow
+- Triggers on PR merge to `main`
+- Runs full test suite
+- Creates version and deployment tags
+- Deploys to production environment
+- Sends deployment notifications
+
+## Monitoring and Alerts
+
+### Deployment Monitoring
+- Health check endpoints
+- Performance metrics
+- Error rate monitoring
+- User experience metrics
+
+### Rollback Triggers
+- High error rate (>5%)
+- Performance degradation (>20%)
+- Security vulnerabilities
+- User complaints
+
+## Documentation Requirements
+
+### Required Documentation
+- API changes
+- Database migrations
+- Configuration changes
+- Breaking changes
+- New features
+
+### Documentation Location
+- README.md for general changes
+- API.md for API changes
+- CHANGELOG.md for version history
+- DEPLOYMENT.md for deployment notes
