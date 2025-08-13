@@ -1026,6 +1026,13 @@ function App() {
                       type: "critical"
                     });
                   }
+                  if (!result.spf?.enabled) {
+                    issues.push({
+                      title: "No SPF Record Found",
+                      description: "No SPF record found - domain vulnerable to email spoofing",
+                      type: "critical"
+                    });
+                  }
                   if (!result.dmarc?.enabled) {
                     issues.push({
                       title: "No DMARC Record Found", 
@@ -1044,6 +1051,13 @@ function App() {
                           issues.push({
                             title: "No DKIM Records Found",
                             description: "No DKIM records found - emails may be marked as spam",
+                            type: "critical"
+                          });
+                        }
+                        if (!result.spf?.enabled) {
+                          issues.push({
+                            title: "No SPF Record Found",
+                            description: "No SPF record found - domain vulnerable to email spoofing",
                             type: "critical"
                           });
                         }
