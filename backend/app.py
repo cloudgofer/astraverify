@@ -36,6 +36,17 @@ EMAIL_SMTP_SERVER = 'smtp.gmail.com'  # Gmail SMTP server
 EMAIL_SMTP_PORT = 587
 EMAIL_USERNAME = 'hi@astraverify.com'
 
+# Environment-specific email configuration
+if ENVIRONMENT == 'staging':
+    # For staging, use a different configuration or disable email sending
+    EMAIL_SMTP_SERVER = 'smtp.gmail.com'
+    EMAIL_SMTP_PORT = 587
+    EMAIL_USERNAME = 'hi@astraverify.com'
+    # In staging, we'll use a different approach or disable email sending
+    STAGING_EMAIL_ENABLED = False
+else:
+    STAGING_EMAIL_ENABLED = True
+
 # Get email password from environment or GCP Secret Manager
 def get_email_password():
     """Get email password from environment or GCP Secret Manager"""
@@ -373,6 +384,14 @@ def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
 
 def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
     """Send email report with analysis results"""
+    
+    # Check if email sending is enabled for staging environment
+    if ENVIRONMENT == 'staging' and not STAGING_EMAIL_ENABLED:
+        logger.info(f"Email sending disabled in staging environment. Would send to: {to_email}")
+        logger.info(f"Email content would be generated for domain: {domain}")
+        # Return success to avoid breaking the frontend
+        return True
+    
     try:
         # Create message
         msg = MIMEMultipart('alternative')
@@ -1254,7 +1273,17 @@ def send_email_report_endpoint():
             return jsonify({"success": False, "error": "Missing required fields"}), 400
         
         # Send actual email
-        if EMAIL_PASSWORD:
+        if ENVIRONMENT == 'staging' and not STAGING_EMAIL_ENABLED:
+            # In staging with email disabled, return success but indicate it's staging
+            return jsonify({
+                "success": True,
+                "message": "Email report would be sent (staging environment - email disabled)",
+                "email_sent": False,
+                "email_configured": False,
+                "environment": "staging",
+                "note": "Email sending is disabled in staging environment for testing"
+            })
+        elif EMAIL_PASSWORD:
             email_sent = send_email_report(email, domain, analysis_result, opt_in_marketing)
             if email_sent:
                 return jsonify({
