@@ -40,7 +40,7 @@ ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY', 'astraverify-admin-2024')
 
 # Email configuration
 EMAIL_SENDER = 'hi@astraverify.com'
-EMAIL_SMTP_SERVER = 'smtp.dreamhost.com'  # DreamHost SMTP server
+EMAIL_SMTP_SERVER = 'smtp.gmail.com'  # Gmail SMTP server
 EMAIL_SMTP_PORT = 587
 EMAIL_USERNAME = 'hi@astraverify.com'
 
