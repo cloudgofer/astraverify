@@ -1140,6 +1140,46 @@ def complete_dkim_check():
     if ENVIRONMENT == 'development' and 'check_time' in dkim_result:
         dkim_response['check_time'] = dkim_result['check_time']
     
+    # Compile complete results for storage
+    complete_results = {
+        "domain": domain,
+        "analysis_timestamp": None,  # Will be set by frontend
+        "security_score": security_score,
+        "email_provider": email_provider,
+        "mx": {
+            "enabled": mx_result['has_mx'],
+            "status": mx_result['status'],
+            "description": mx_result['description'],
+            "records": mx_result['records']
+        },
+        "spf": {
+            "enabled": spf_result['has_spf'],
+            "status": spf_result['status'],
+            "description": spf_result['description'],
+            "records": spf_result['records']
+        },
+        "dkim": {
+            "enabled": dkim_result['has_dkim'],
+            "status": dkim_result['status'],
+            "description": dkim_result['description'],
+            "records": dkim_result['records']
+        },
+        "dmarc": {
+            "enabled": dmarc_result['has_dmarc'],
+            "status": dmarc_result['status'],
+            "description": dmarc_result['description'],
+            "records": dmarc_result['records']
+        },
+        "recommendations": recommendations
+    }
+    
+    # Store analysis results in Firestore
+    try:
+        firestore_manager.store_analysis(domain, complete_results)
+        logger.info(f"Progressive analysis stored in Firestore for {domain}")
+    except Exception as e:
+        logger.warning(f"Failed to store progressive analysis in Firestore: {e}")
+    
     return jsonify({
         "domain": domain,
         "dkim": dkim_response,

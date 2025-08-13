@@ -92,6 +92,11 @@ function App() {
           console.log('🔍 Final recommendations:', newResult.recommendations);
           return newResult;
         });
+        
+        // Refresh statistics after successful analysis
+        setTimeout(() => {
+          refreshStatistics();
+        }, 1000);
       } else {
         console.error('DKIM completion failed:', dkimResponse.status);
         setResult(prevResult => ({
@@ -415,6 +420,20 @@ function App() {
       }, 500);
     }
   }, []); // Only run once on mount
+
+    const refreshStatistics = async () => {
+    try {
+      const response = await fetch(`${config.API_BASE_URL}/api/public/statistics`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data) {
+          setStatistics(data.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing statistics:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchStatistics = async () => {
