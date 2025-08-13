@@ -7,3 +7,4 @@ export EMAIL_PASSWORD="AVCloudG28#a1"
 cd backend
 source venv/bin/activate
 python app.py
+
