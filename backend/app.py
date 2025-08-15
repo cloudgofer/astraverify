@@ -548,6 +548,8 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         issues = []
         if not dkim.get('enabled'):
             issues.append("No DKIM records found - emails may be marked as spam")
+        if not spf.get('enabled'):
+            issues.append("No SPF record found - domain vulnerable to email spoofing")
         if not dmarc.get('enabled'):
             issues.append("No DMARC record found - email authentication not enforced")
         
