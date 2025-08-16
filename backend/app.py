@@ -431,6 +431,8 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         # Determine frontend URL based on environment
         if ENVIRONMENT == 'staging':
             frontend_url = 'https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app'
+        elif ENVIRONMENT == 'local':
+            frontend_url = 'http://localhost:3000'
         else:
             frontend_url = 'https://astraverify.com'
         
@@ -553,6 +555,10 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         if not dmarc.get('enabled'):
             issues.append("No DMARC record found - email authentication not enforced")
         
+        # Debug logging for issues generation
+        logger.info(f"Email issues generation - SPF enabled: {spf.get('enabled')}, DKIM enabled: {dkim.get('enabled')}, DMARC enabled: {dmarc.get('enabled')}")
+        logger.info(f"Generated issues: {issues}")
+        
         if issues:
             html_content += """
                 <div class="issues-section">
@@ -581,8 +587,15 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
                 """
             html_content += "</div>"
         
-        # Add footer with current date
+        # Add footer with current date and version
         current_date = datetime.now().strftime("%B %d, %Y")
+        
+        # Read version from VERSION file
+        try:
+            with open('VERSION', 'r') as f:
+                version = f.read().strip()
+        except:
+            version = "2025.08.15.01-Beta"
         
         html_content += f"""
                 <div class="footer">
@@ -591,6 +604,9 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
                     <p style="font-size: 11px; color: #999; margin-top: 20px;">
                         This email was sent to {to_email} in response to a security analysis request for {domain}.<br>
                         If you did not request this report, please ignore this email.
+                    </p>
+                    <p style="font-size: 10px; color: #999; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">
+                        v{version} | © AstraVerify.com - a CloudGofer.com service
                     </p>
                 </div>
             </div>

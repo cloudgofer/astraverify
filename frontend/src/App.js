@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import config from './config';
+import { getFooterText } from './version';
 import './App.css';
 
 function App() {
@@ -1278,6 +1279,13 @@ function App() {
           </div>
         )}
       </main>
+      
+      {/* Footer */}
+      <footer className="app-footer">
+        <div className="footer-content">
+          <p className="footer-text">{getFooterText()}</p>
+        </div>
+      </footer>
     </div>
   );
 }
