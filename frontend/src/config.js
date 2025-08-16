@@ -1,6 +1,6 @@
 const config = {
-  // Backend API URL - LOCAL environment
-  API_BASE_URL: 'http://localhost:8080',
+  // Backend API URL - STAGING environment
+  API_BASE_URL: 'https://astraverify-backend-staging-ml2mhibdvq-uc.a.run.app',
 
   // API endpoints
   ENDPOINTS: {
@@ -8,8 +8,8 @@ const config = {
   },
 
   // Application settings
-  APP_NAME: 'AstraVerify (Local)',
-  APP_DESCRIPTION: 'Email Domain Verification Tool - Local Development'
+  APP_NAME: 'AstraVerify (Staging)',
+  APP_DESCRIPTION: 'Email Domain Verification Tool - Staging Environment'
 };
 
 export default config;
