@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rate Limit Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .test-button:hover {
+            background: #0056b3;
+        }
+        .test-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+        }
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .result.rate-limit {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .result.blocked {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔒 IP Abuse Prevention Test</h1>
+    
+    <div class="test-section">
+        <h2>Rate Limiting Test</h2>
+        <p>This test will make multiple rapid requests to trigger rate limiting.</p>
+        <button class="test-button" onclick="testRateLimit()">Test Rate Limiting</button>
+        <button class="test-button" onclick="clearResults()">Clear Results</button>
+        <div id="rateLimitResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>IP Blocking Test</h2>
+        <p>This test will make requests with suspicious user agents to trigger IP blocking.</p>
+        <button class="test-button" onclick="testIPBlocking()">Test IP Blocking</button>
+        <div id="ipBlockResults"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Normal Request Test</h2>
+        <p>This test will make a normal request to verify the API is working.</p>
+        <button class="test-button" onclick="testNormalRequest()">Test Normal Request</button>
+        <div id="normalResults"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080';
+        let requestCount = 0;
+
+        function addResult(containerId, message, type = 'success') {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            container.appendChild(div);
+        }
+
+        function clearResults() {
+            document.getElementById('rateLimitResults').innerHTML = '';
+            document.getElementById('ipBlockResults').innerHTML = '';
+            document.getElementById('normalResults').innerHTML = '';
+        }
+
+        async function testRateLimit() {
+            const results = document.getElementById('rateLimitResults');
+            results.innerHTML = '';
+            
+            addResult('rateLimitResults', 'Starting rate limit test...', 'success');
+            
+            // Make 15 rapid requests (should trigger rate limiting after 10)
+            for (let i = 1; i <= 15; i++) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/check?domain=test${i}.com`);
+                    const data = await response.text();
+                    
+                    if (response.status === 429) {
+                        addResult('rateLimitResults', `Request ${i}: Rate limited! Status: ${response.status}`, 'rate-limit');
+                        try {
+                            const errorData = JSON.parse(data);
+                            addResult('rateLimitResults', `Rate limit details: ${JSON.stringify(errorData, null, 2)}`, 'rate-limit');
+                        } catch (e) {
+                            addResult('rateLimitResults', `Response: ${data}`, 'rate-limit');
+                        }
+                        break;
+                    } else if (response.ok) {
+                        addResult('rateLimitResults', `Request ${i}: Success`, 'success');
+                    } else {
+                        addResult('rateLimitResults', `Request ${i}: Error ${response.status}`, 'error');
+                    }
+                } catch (error) {
+                    addResult('rateLimitResults', `Request ${i}: Network error - ${error.message}`, 'error');
+                }
+                
+                // Small delay between requests
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        async function testIPBlocking() {
+            const results = document.getElementById('ipBlockResults');
+            results.innerHTML = '';
+            
+            addResult('ipBlockResults', 'Starting IP blocking test...', 'success');
+            
+            // Make requests with suspicious user agents
+            const suspiciousUserAgents = [
+                'python-requests/2.28.1',
+                'curl/7.68.0',
+                'wget/1.21.3',
+                'bot/1.0',
+                ''
+            ];
+            
+            for (let i = 0; i < suspiciousUserAgents.length; i++) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/check?domain=test.com`, {
+                        headers: {
+                            'User-Agent': suspiciousUserAgents[i]
+                        }
+                    });
+                    const data = await response.text();
+                    
+                    if (response.status === 403) {
+                        addResult('ipBlockResults', `Request ${i + 1}: Blocked! Status: ${response.status}`, 'blocked');
+                        try {
+                            const errorData = JSON.parse(data);
+                            addResult('ipBlockResults', `Block details: ${JSON.stringify(errorData, null, 2)}`, 'blocked');
+                        } catch (e) {
+                            addResult('ipBlockResults', `Response: ${data}`, 'blocked');
+                        }
+                        break;
+                    } else if (response.ok) {
+                        addResult('ipBlockResults', `Request ${i + 1}: Success (User-Agent: ${suspiciousUserAgents[i]})`, 'success');
+                    } else {
+                        addResult('ipBlockResults', `Request ${i + 1}: Error ${response.status}`, 'error');
+                    }
+                } catch (error) {
+                    addResult('ipBlockResults', `Request ${i + 1}: Network error - ${error.message}`, 'error');
+                }
+                
+                // Small delay between requests
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+
+        async function testNormalRequest() {
+            const results = document.getElementById('normalResults');
+            results.innerHTML = '';
+            
+            addResult('normalResults', 'Testing normal request...', 'success');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/check?domain=google.com`, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                    }
+                });
+                const data = await response.text();
+                
+                if (response.ok) {
+                    addResult('normalResults', 'Normal request successful!', 'success');
+                    try {
+                        const jsonData = JSON.parse(data);
+                        addResult('normalResults', `Domain: ${jsonData.domain || 'N/A'}, Score: ${jsonData.security_score?.score || 'N/A'}`, 'success');
+                    } catch (e) {
+                        addResult('normalResults', 'Response received (not JSON)', 'success');
+                    }
+                } else {
+                    addResult('normalResults', `Error: ${response.status} - ${data}`, 'error');
+                }
+            } catch (error) {
+                addResult('normalResults', `Network error: ${error.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

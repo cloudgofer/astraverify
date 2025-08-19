@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, Any, List
-from backend.config_loader import ConfigLoader
-from backend.parsers import parse_dmarc_record, parse_spf_record, parse_dkim_record, analyze_mx_records
+from config_loader import ConfigLoader
+from parsers import parse_dmarc_record, parse_spf_record, parse_dkim_record, analyze_mx_records
 
 logger = logging.getLogger(__name__)
 

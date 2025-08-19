@@ -4,3 +4,6 @@ dnspython==2.7.0
 aiodns==3.1.1
 google-cloud-firestore==2.18.0
 google-cloud-secret-manager==2.20.0
+redis==5.0.1
+python-dateutil==2.8.2
+pandas==2.1.4

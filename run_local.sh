@@ -68,8 +68,21 @@ else
     pip install -r requirements.txt
 fi
 
+# Set environment to local
+export ENVIRONMENT="local"
+
+# Set up email password for local development
+export EMAIL_PASSWORD="juek rown cptq zkpo"
+
+# Set up Google Cloud credentials for local development
+if [ ! -f ~/firebase-key.json ]; then
+    print_warning "Firebase service account key not found. Creating one..."
+    gcloud iam service-accounts keys create ~/firebase-key.json --iam-account=firebase-adminsdk-fbsvc@astraverify.iam.gserviceaccount.com
+fi
+export GOOGLE_APPLICATION_CREDENTIALS=~/firebase-key.json
+
 # Start backend in background
-python app.py &
+ENVIRONMENT=local EMAIL_PASSWORD="juek rown cptq zkpo" GOOGLE_APPLICATION_CREDENTIALS=~/firebase-key.json python app.py &
 BACKEND_PID=$!
 print_status "Backend started with PID: $BACKEND_PID"
 

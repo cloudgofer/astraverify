@@ -1,6 +1,6 @@
 import logging
 from typing import Dict, Any, List
-from backend.config_loader import ConfigLoader
+from config_loader import ConfigLoader
 
 logger = logging.getLogger(__name__)
 

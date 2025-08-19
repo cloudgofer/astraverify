@@ -51,7 +51,21 @@ function App() {
       if (!progressiveResponse.ok) {
         const errorText = await progressiveResponse.text();
         console.error('Progressive response error:', progressiveResponse.status, errorText);
-        throw new Error(`HTTP error! status: ${progressiveResponse.status} - ${errorText.substring(0, 100)}`);
+        
+        // Try to parse JSON error response for better error handling
+        let errorData = null;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          // Not JSON, use as text
+        }
+        
+        // Create enhanced error with status and data
+        const enhancedError = new Error(`HTTP error! status: ${progressiveResponse.status}`);
+        enhancedError.status = progressiveResponse.status;
+        enhancedError.data = errorData;
+        enhancedError.text = errorText;
+        throw enhancedError;
       }
       
       const contentType = progressiveResponse.headers.get('content-type');
@@ -112,7 +126,45 @@ function App() {
       }
     } catch (error) {
       console.error('Error checking domain:', error);
-      setError(`Error analyzing domain: ${error.message}`);
+      
+      // Enhanced error handling for security responses
+      let errorMessage = error.message;
+      
+      // Check for rate limiting (429)
+      if (error.status === 429 && error.data) {
+        if (error.data.error === 'Rate limit exceeded') {
+          errorMessage = `Rate limit exceeded. You can make ${error.data.limits?.requests_per_minute || 10} requests per minute. Please wait ${error.data.retry_after || 60} seconds before trying again.`;
+        } else {
+          errorMessage = 'Rate limit exceeded. Please wait a moment before trying again.';
+        }
+      }
+      
+      // Check for IP blocking (403)
+      if (error.status === 403 && error.data) {
+        if (error.data.error === 'Access denied') {
+          if (error.data.blocked_until) {
+            const blockedUntil = new Date(error.data.blocked_until);
+            const now = new Date();
+            const timeRemaining = Math.ceil((blockedUntil - now) / 1000 / 60); // minutes
+            errorMessage = `Access temporarily blocked due to suspicious activity. Block expires in ${timeRemaining} minutes. Reason: ${error.data.reason || 'Security violation'}`;
+          } else {
+            errorMessage = `Access denied: ${error.data.reason || 'Security violation detected'}`;
+          }
+        } else {
+          errorMessage = 'Access denied due to security policy. Please try again later.';
+        }
+      }
+      
+      // Check for network errors
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        errorMessage = 'Network request failed. Please check your internet connection and try again.';
+      } else if (error.message.includes('Failed to fetch')) {
+        errorMessage = 'Unable to connect to the server. Please ensure the backend is running and try again.';
+      } else if (error.message.includes('CORS')) {
+        errorMessage = 'Cross-origin request blocked. Please check server configuration.';
+      }
+      
+      setError(`Error analyzing domain: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -511,8 +563,18 @@ function App() {
         </form>
 
         {error && (
-          <div className="error-message">
-            {error}
+          <div className={`error-message ${error.includes('Rate limit') ? 'rate-limit-error' : error.includes('Access denied') || error.includes('blocked') ? 'security-error' : 'general-error'}`}>
+            <div className="error-icon">
+              {error.includes('Rate limit') ? '⏱️' : error.includes('Access denied') || error.includes('blocked') ? '🚫' : '⚠️'}
+            </div>
+            <div className="error-content">
+              <h4>
+                {error.includes('Rate limit') ? 'Rate Limit Exceeded' : 
+                 error.includes('Access denied') || error.includes('blocked') ? 'Access Blocked' : 
+                 'Error'}
+              </h4>
+              <p>{error}</p>
+            </div>
           </div>
         )}
 

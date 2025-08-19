@@ -436,6 +436,8 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         else:
             frontend_url = 'https://astraverify.com'
         
+        logger.info(f"Email environment: {ENVIRONMENT}, frontend URL: {frontend_url}")
+        
         # Get score and grade
         score = analysis_result.get('security_score', {}).get('score', 0)
         grade = get_score_grade(score)
@@ -1344,6 +1346,14 @@ def send_email_report_endpoint():
         
         if not email or not domain or not analysis_result:
             return jsonify({"success": False, "error": "Missing required fields"}), 400
+        
+        # Store email report in Firestore first
+        try:
+            firestore_manager.store_email_report(email, domain, analysis_result, opt_in_marketing, timestamp)
+            logger.info(f"Email report stored in Firestore for {domain} to {email}")
+        except Exception as e:
+            logger.error(f"Failed to store email report in Firestore: {e}")
+            # Continue with email sending even if Firestore storage fails
         
         # Send actual email
         if EMAIL_PASSWORD:
