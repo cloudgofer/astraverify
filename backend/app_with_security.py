@@ -743,6 +743,18 @@ def check_domain():
         # Calculate total score
         total_score = scoring_engine.calculate_total_score(component_scores)
         
+        # Transform component_scores to scoring_details format expected by frontend
+        early_scoring_details = {
+            'mx_base': component_scores['mx']['score'],
+            'mx_bonus': component_scores['mx']['bonus'],
+            'spf_base': component_scores['spf']['score'],
+            'spf_bonus': component_scores['spf']['bonus'],
+            'dmarc_base': component_scores['dmarc']['score'],
+            'dmarc_bonus': component_scores['dmarc']['bonus'],
+            'dkim_base': component_scores['dkim']['score'],
+            'dkim_bonus': component_scores['dkim']['bonus']
+        }
+        
         # Generate recommendations
         early_parsed_data = {
             'mx': mx_result,
@@ -755,7 +767,10 @@ def check_domain():
         early_results = {
             "domain": domain,
             "analysis_timestamp": None,
-            "security_score": total_score,
+            "security_score": {
+                **total_score,
+                "scoring_details": early_scoring_details
+            },
             "email_provider": "Unknown",
             "mx": {
                 "enabled": mx_result['has_mx'],
@@ -814,11 +829,26 @@ def check_domain():
     }
     recommendations = recommendation_engine.generate_recommendations(component_scores, parsed_data)
     
+    # Transform component_scores to scoring_details format expected by frontend
+    scoring_details = {
+        'mx_base': component_scores['mx']['score'],
+        'mx_bonus': component_scores['mx']['bonus'],
+        'spf_base': component_scores['spf']['score'],
+        'spf_bonus': component_scores['spf']['bonus'],
+        'dmarc_base': component_scores['dmarc']['score'],
+        'dmarc_bonus': component_scores['dmarc']['bonus'],
+        'dkim_base': component_scores['dkim']['score'],
+        'dkim_bonus': component_scores['dkim']['bonus']
+    }
+    
     # Compile comprehensive results
     results = {
         "domain": domain,
         "analysis_timestamp": None,
-        "security_score": security_score,
+        "security_score": {
+            **security_score,
+            "scoring_details": scoring_details
+        },
         "component_scores": component_scores,
         "mx": {
             "enabled": mx_result['has_mx'],
