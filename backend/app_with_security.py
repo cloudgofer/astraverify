@@ -473,12 +473,69 @@ def admin_security_dashboard():
 def admin_blocked_ips():
     """Get list of blocked IPs"""
     try:
-        # This would need to be implemented in IPBlocker
-        blocked_ips = []  # Placeholder
+        blocked_ips = ip_blocker.get_blocked_ips()
         return jsonify({"blocked_ips": blocked_ips})
     except Exception as e:
         logger.error(f"Blocked IPs error: {e}")
         return jsonify({"error": "Failed to get blocked IPs"}), 500
+
+@app.route('/api/admin/unblock-ip/<ip>', methods=['POST'])
+@require_admin_auth
+def admin_unblock_ip(ip):
+    """Admin endpoint to unblock an IP"""
+    try:
+        success = ip_blocker.unblock_ip(ip)
+        return jsonify({
+            'success': success,
+            'message': f"IP {ip} {'unblocked' if success else 'not found'}"
+        })
+    except Exception as e:
+        logger.error(f"Unblock IP error: {e}")
+        return jsonify({"error": "Failed to unblock IP"}), 500
+
+@app.route('/api/admin/clear-all-blocks', methods=['POST'])
+@require_admin_auth
+def admin_clear_all_blocks():
+    """Admin endpoint to clear all IP blocks and abuse detection data"""
+    try:
+        # Clear all IP blocks
+        blocked_ips = ip_blocker.get_blocked_ips()
+        for ip in blocked_ips.keys():
+            ip_blocker.unblock_ip(ip)
+        
+        # Clear abuse detection data
+        abuse_detector.clear_all_blocks()
+        
+        logger.warning("All IP blocks and abuse detection data cleared by admin")
+        return jsonify({
+            'success': True,
+            'message': 'All IP blocks and abuse detection data cleared',
+            'cleared_ips': len(blocked_ips)
+        })
+    except Exception as e:
+        logger.error(f"Clear all blocks error: {e}")
+        return jsonify({"error": "Failed to clear blocks"}), 500
+
+@app.route('/api/admin/reset-abuse-detection', methods=['POST'])
+@require_admin_auth
+def admin_reset_abuse_detection():
+    """Admin endpoint to reset abuse detection for a specific IP"""
+    try:
+        data = request.get_json()
+        ip = data.get('ip')
+        if not ip:
+            return jsonify({"error": "IP address required"}), 400
+        
+        abuse_detector.reset_ip_score(ip)
+        ip_blocker.unblock_ip(ip)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Abuse detection reset for IP {ip}'
+        })
+    except Exception as e:
+        logger.error(f"Reset abuse detection error: {e}")
+        return jsonify({"error": "Failed to reset abuse detection"}), 500
 
 # Helper functions for domain analysis
 def get_mx_details(domain):
@@ -686,6 +743,18 @@ def check_domain():
         # Calculate total score
         total_score = scoring_engine.calculate_total_score(component_scores)
         
+        # Transform component_scores to scoring_details format expected by frontend
+        early_scoring_details = {
+            'mx_base': component_scores['mx']['score'],
+            'mx_bonus': component_scores['mx']['bonus'],
+            'spf_base': component_scores['spf']['score'],
+            'spf_bonus': component_scores['spf']['bonus'],
+            'dmarc_base': component_scores['dmarc']['score'],
+            'dmarc_bonus': component_scores['dmarc']['bonus'],
+            'dkim_base': component_scores['dkim']['score'],
+            'dkim_bonus': component_scores['dkim']['bonus']
+        }
+        
         # Generate recommendations
         early_parsed_data = {
             'mx': mx_result,
@@ -698,7 +767,10 @@ def check_domain():
         early_results = {
             "domain": domain,
             "analysis_timestamp": None,
-            "security_score": total_score,
+            "security_score": {
+                **total_score,
+                "scoring_details": early_scoring_details
+            },
             "email_provider": "Unknown",
             "mx": {
                 "enabled": mx_result['has_mx'],
@@ -757,11 +829,26 @@ def check_domain():
     }
     recommendations = recommendation_engine.generate_recommendations(component_scores, parsed_data)
     
+    # Transform component_scores to scoring_details format expected by frontend
+    scoring_details = {
+        'mx_base': component_scores['mx']['score'],
+        'mx_bonus': component_scores['mx']['bonus'],
+        'spf_base': component_scores['spf']['score'],
+        'spf_bonus': component_scores['spf']['bonus'],
+        'dmarc_base': component_scores['dmarc']['score'],
+        'dmarc_bonus': component_scores['dmarc']['bonus'],
+        'dkim_base': component_scores['dkim']['score'],
+        'dkim_bonus': component_scores['dkim']['bonus']
+    }
+    
     # Compile comprehensive results
     results = {
         "domain": domain,
         "analysis_timestamp": None,
-        "security_score": security_score,
+        "security_score": {
+            **security_score,
+            "scoring_details": scoring_details
+        },
         "component_scores": component_scores,
         "mx": {
             "enabled": mx_result['has_mx'],
@@ -1056,6 +1143,565 @@ def get_security_status(score):
         return "Poor Security"
     else:
         return "Poor Security"
+
+# Analytics and Statistics Endpoints
+
+@app.route('/api/analytics/statistics', methods=['GET'])
+@require_admin_auth
+def get_analytics_statistics():
+    """Get analytics statistics (admin only)"""
+    try:
+        stats = firestore_manager.get_statistics()
+        return jsonify({
+            "success": True,
+            "data": stats
+        })
+    except Exception as e:
+        logger.error(f"Failed to get statistics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/public/statistics', methods=['GET'])
+def get_public_statistics():
+    """Get public statistics (no admin required)"""
+    try:
+        stats = firestore_manager.get_statistics()
+        # Return only basic stats for public consumption
+        public_stats = {
+            "total_analyses": stats.get('total_analyses', 0),
+            "unique_domains": stats.get('unique_domains', 0),
+            "average_security_score": stats.get('average_security_score', 0),
+            "email_provider_distribution": stats.get('email_provider_distribution', {})
+        }
+        return jsonify({
+            "success": True,
+            "data": public_stats
+        })
+    except Exception as e:
+        logger.error(f"Failed to get public statistics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/analytics/recent', methods=['GET'])
+@require_admin_auth
+def get_recent_analytics():
+    """Get recent analytics data"""
+    try:
+        recent_data = firestore_manager.get_recent_analytics()
+        return jsonify({
+            "success": True,
+            "data": recent_data
+        })
+    except Exception as e:
+        logger.error(f"Failed to get recent analytics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/analytics/history/<domain>', methods=['GET'])
+@require_admin_auth
+def get_domain_history(domain):
+    """Get analysis history for a specific domain"""
+    try:
+        # Validate domain
+        is_valid, validation_result = validate_domain(domain)
+        if not is_valid:
+            return jsonify({"error": validation_result}), 400
+        
+        history = firestore_manager.get_domain_history(domain)
+        return jsonify({
+            "success": True,
+            "data": history
+        })
+    except Exception as e:
+        logger.error(f"Failed to get history for {domain}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
+    """
+    Calculate comprehensive security score with bonus points.
+    
+    Base Scoring (100 points total):
+    - MX Records: 25 points (essential for email delivery)
+    - SPF Records: 25 points (prevents email spoofing)
+    - DMARC Records: 30 points (authentication reporting)
+    - DKIM Records: 20 points (email authentication)
+    
+    Bonus Points (up to 10 additional points):
+    - Multiple MX records: +2 points (redundancy)
+    - Strong SPF policy: +1-2 points (-all > ~all > ?all)
+    - Strict DMARC policy: +1-2 points (p=reject > p=quarantine)
+    - Multiple DKIM selectors: +2 points (diversity) - only for non-Google providers
+    - 100% DMARC coverage: +1 point (pct=100)
+    """
+    score = 0
+    max_score = 100
+    bonus_points = 0
+    max_bonus = 10
+    scoring_details = {}
+    
+    # Base scoring (MX: 25, SPF: 25, DMARC: 30, DKIM: 20)
+    if mx_result['has_mx']:
+        # Check if MX records are actually functional
+        functional_mx = False
+        for record in mx_result['records']:
+            server = record.get('server', '')
+            # Skip non-functional servers like "." or empty strings
+            if server and server != '.' and server != '':
+                functional_mx = True
+                break
+        
+        if functional_mx:
+            score += 25
+            scoring_details['mx_base'] = 25
+            # Bonus for multiple MX records (redundancy)
+            if len(mx_result['records']) > 1:
+                bonus_points += 2
+                scoring_details['mx_bonus'] = 2
+            else:
+                scoring_details['mx_bonus'] = 0
+        else:
+            # MX records exist but are not functional
+            scoring_details['mx_base'] = 0
+            scoring_details['mx_bonus'] = 0
+    else:
+        scoring_details['mx_base'] = 0
+        scoring_details['mx_bonus'] = 0
+    
+    if spf_result['has_spf']:
+        score += 25
+        scoring_details['spf_base'] = 25
+        # Bonus for strong SPF policy
+        spf_bonus = 0
+        for record in spf_result['records']:
+            if '-all' in record['record']:
+                spf_bonus += 2  # Strongest policy
+            elif '~all' in record['record']:
+                spf_bonus += 1  # Medium policy
+            elif '?all' in record['record']:
+                spf_bonus += 0.5  # Weakest policy
+        bonus_points += spf_bonus
+        scoring_details['spf_bonus'] = spf_bonus
+    else:
+        scoring_details['spf_base'] = 0
+        scoring_details['spf_bonus'] = 0
+    
+    if dmarc_result['has_dmarc']:
+        score += 30
+        scoring_details['dmarc_base'] = 30
+        # Bonus for strong DMARC policy
+        dmarc_bonus = 0
+        for record in dmarc_result['records']:
+            if 'p=reject' in record['record']:
+                dmarc_bonus += 2  # Strictest policy
+            elif 'p=quarantine' in record['record']:
+                dmarc_bonus += 1  # Medium policy
+            if 'pct=100' in record['record']:
+                dmarc_bonus += 1  # 100% coverage
+        bonus_points += dmarc_bonus
+        scoring_details['dmarc_bonus'] = dmarc_bonus
+    else:
+        scoring_details['dmarc_base'] = 0
+        scoring_details['dmarc_bonus'] = 0
+    
+    if dkim_result['has_dkim']:
+        score += 20
+        scoring_details['dkim_base'] = 20
+        # Bonus for multiple DKIM selectors (only for non-Google providers)
+        provider = detect_email_provider(mx_result, spf_result, dkim_result)
+        if len(dkim_result['records']) > 1 and provider != "Google Workspace":
+            bonus_points += 2
+            scoring_details['dkim_bonus'] = 2
+        else:
+            scoring_details['dkim_bonus'] = 0
+    else:
+        scoring_details['dkim_base'] = 0
+        scoring_details['dkim_bonus'] = 0
+    
+    # Apply bonus points (capped at max_bonus)
+    final_score = min(score + bonus_points, max_score)
+    
+    # Determine grade and status
+    if final_score >= 90:
+        grade = 'A'
+        status = 'Excellent'
+    elif final_score >= 75:
+        grade = 'B'
+        status = 'Good'
+    elif final_score >= 50:
+        grade = 'C'
+        status = 'Fair'
+    elif final_score >= 25:
+        grade = 'D'
+        status = 'Poor'
+    else:
+        grade = 'F'
+        status = 'Very Poor'
+    
+    return {
+        'score': round(final_score, 1),
+        'grade': grade,
+        'status': status,
+        'max_score': max_score,
+        'base_score': score,
+        'bonus_points': round(bonus_points, 1),
+        'max_bonus': max_bonus,
+        'scoring_details': scoring_details
+    }
+
+
+@app.route('/api/check/dkim', methods=['GET'])
+def check_dkim_endpoint():
+    """Complete DKIM check for progressive mode (optimized)"""
+    try:
+        domain = request.args.get('domain')
+        custom_selector = request.args.get('dkim_selector')
+        
+        if not domain:
+            return jsonify({"error": "Domain parameter is required"}), 400
+        
+        # Remove protocol if present
+        domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
+        
+        logger.info(f"Completing optimized DKIM analysis for domain: {domain}")
+        
+        # Get MX servers for provider-specific selector prioritization
+        mx_servers = []
+        try:
+            mx_result = get_mx_details(domain)
+            if mx_result.get('has_mx'):
+                mx_servers = [record['server'] for record in mx_result.get('records', [])]
+        except:
+            pass
+        
+        # Get optimized DKIM results
+        dkim_result = dkim_optimizer_sync.get_dkim_details_optimized(domain, custom_selector, mx_servers)
+        
+        # Detect email provider based on DKIM
+        spf_result = get_spf_details(domain)
+        email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
+        
+        # Calculate security score
+        dmarc_result = get_dmarc_details(domain)
+        
+        # Add debugging and error handling for security score calculation
+        try:
+            logger.info(f"Calculating security score for {domain}")
+            security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+            logger.info(f"Security score calculated: {security_score}")
+        except Exception as e:
+            logger.error(f"Error calculating security score for {domain}: {e}")
+            # Provide a fallback security score
+            security_score = {
+                'score': 0,
+                'grade': 'F',
+                'status': 'Error',
+                'max_score': 100,
+                'base_score': 0,
+                'bonus_points': 0,
+                'max_bonus': 10,
+                'scoring_details': {
+                    'mx_base': 0,
+                    'mx_bonus': 0,
+                    'spf_base': 0,
+                    'spf_bonus': 0,
+                    'dmarc_base': 0,
+                    'dmarc_bonus': 0,
+                    'dkim_base': 0,
+                    'dkim_bonus': 0
+                }
+            }
+        
+        # Generate recommendations
+        recommendations = []
+        
+        try:
+            # Generate enhanced recommendations based on email provider
+            if not mx_result['has_mx']:
+                recommendations.append({
+                    "type": "critical",
+                    "title": "Add MX Records",
+                    "description": "MX records are essential for email delivery. Contact your DNS provider to add MX records."
+                })
+            elif len(mx_result['records']) == 1:
+                recommendations.append({
+                    "type": "info",
+                    "title": "Consider Multiple MX Records",
+                    "description": "Adding secondary MX records improves email delivery reliability and redundancy."
+                })
+            
+            if not spf_result['has_spf']:
+                if email_provider == "Google Workspace":
+                    recommendations.append({
+                        "type": "important",
+                        "title": "Add SPF Record",
+                        "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:_spf.google.com ~all' for Google Workspace."
+                    })
+                elif email_provider == "Microsoft 365":
+                    recommendations.append({
+                        "type": "important",
+                        "title": "Add SPF Record",
+                        "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:spf.protection.outlook.com ~all' for Microsoft 365."
+                    })
+                else:
+                    recommendations.append({
+                        "type": "important",
+                        "title": "Add SPF Record",
+                        "description": "SPF records help prevent email spoofing. Contact your email service provider for the correct SPF record."
+                    })
+            elif any('~all' in r['record'] for r in spf_result['records']):
+                recommendations.append({
+                    "type": "info",
+                    "title": "Strengthen SPF Policy",
+                    "description": "Consider changing '~all' to '-all' for stronger spoofing protection."
+                })
+            
+            if not dmarc_result['has_dmarc']:
+                recommendations.append({
+                    "type": "important",
+                    "title": "Add DMARC Record",
+                    "description": "DMARC records provide email authentication reporting. Add a TXT record at _dmarc.yourdomain.com with 'v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com'"
+                })
+            elif any('p=none' in r['record'] for r in dmarc_result['records']):
+                recommendations.append({
+                    "type": "info",
+                    "title": "Strengthen DMARC Policy",
+                    "description": "Consider changing 'p=none' to 'p=quarantine' or 'p=reject' for better protection."
+                })
+            
+            if not dkim_result['has_dkim']:
+                recommendations.append({
+                    "type": "info",
+                    "title": "Consider DKIM",
+                    "description": "DKIM provides email authentication. This is typically configured by your email service provider."
+                })
+            elif len(dkim_result['records']) == 1:
+                # Only recommend multiple DKIM selectors for non-Google providers
+                if email_provider != "Google Workspace":
+                    recommendations.append({
+                        "type": "info",
+                        "title": "Consider Multiple DKIM Selectors",
+                        "description": "Multiple DKIM selectors provide better authentication diversity and security."
+                    })
+                else:
+                    recommendations.append({
+                        "type": "info",
+                        "title": "DKIM Configuration Complete",
+                        "description": "Google Workspace uses a single DKIM selector which is the standard configuration."
+                    })
+        except Exception as e:
+            recommendations = []
+        
+        # Remove internal timing info
+        dkim_response = {
+            "enabled": dkim_result['has_dkim'],
+            "status": dkim_result['status'],
+            "description": dkim_result['description'],
+            "records": dkim_result['records'],
+            "selectors_checked": dkim_result.get('selectors_checked', 0)
+        }
+        
+        # Add performance info in development
+        if ENVIRONMENT == 'development' and 'check_time' in dkim_result:
+            dkim_response['check_time'] = dkim_result['check_time']
+        
+        # Compile complete results for storage
+        complete_results = {
+            "domain": domain,
+            "analysis_timestamp": None,  # Will be set by frontend
+            "security_score": security_score,
+            "email_provider": email_provider,
+            "mx": {
+                "enabled": mx_result['has_mx'],
+                "status": mx_result['status'],
+                "description": mx_result['description'],
+                "records": mx_result['records']
+            },
+            "spf": {
+                "enabled": spf_result['has_spf'],
+                "status": spf_result['status'],
+                "description": spf_result['description'],
+                "records": spf_result['records']
+            },
+            "dkim": {
+                "enabled": dkim_result['has_dkim'],
+                "status": dkim_result['status'],
+                "description": dkim_result['description'],
+                "records": dkim_result['records']
+            },
+            "dmarc": {
+                "enabled": dmarc_result['has_dmarc'],
+                "status": dmarc_result['status'],
+                "description": dmarc_result['description'],
+                "records": dmarc_result['records']
+            },
+            "recommendations": recommendations
+        }
+        
+        # Store analysis results in Firestore
+        try:
+            firestore_manager.store_analysis(domain, complete_results)
+            logger.info(f"Progressive analysis stored in Firestore for {domain}")
+        except Exception as e:
+            logger.warning(f"Failed to store progressive analysis in Firestore: {e}")
+        
+        # Add debugging for response
+        response_data = {
+            "domain": domain,
+            "dkim": dkim_response,
+            "email_provider": email_provider,
+            "security_score": security_score,
+            "recommendations": recommendations,
+            "completed": True
+        }
+        
+        logger.info(f"DKIM endpoint response for {domain}: {response_data}")
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"DKIM check error for {domain}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/dkim/check-selector', methods=['GET'])
+def check_dkim_selector():
+    """Check specific DKIM selector"""
+    try:
+        domain = request.args.get('domain')
+        selector = request.args.get('selector', 'default')
+        
+        if not domain:
+            return jsonify({"error": "Domain parameter required"}), 400
+        
+        # Validate domain
+        is_valid, validation_result = validate_domain(domain)
+        if not is_valid:
+            return jsonify({"error": validation_result}), 400
+        
+        # Check specific selector
+        try:
+            dkim_records = dns.resolver.resolve(f"{selector}._domainkey.{validation_result}", 'TXT')
+            records = [record.to_text().strip('"') for record in dkim_records]
+            
+            return jsonify({
+                "success": True,
+                "domain": validation_result,
+                "selector": selector,
+                "records": records,
+                "found": len(records) > 0
+            })
+        except dns.resolver.NXDOMAIN:
+            return jsonify({
+                "success": True,
+                "domain": validation_result,
+                "selector": selector,
+                "records": [],
+                "found": False
+            })
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": f"DNS resolution error: {str(e)}"
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"DKIM selector check error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/dkim/suggest-selectors', methods=['GET'])
+def suggest_dkim_selectors():
+    """Suggest common DKIM selectors for a domain"""
+    try:
+        domain = request.args.get('domain')
+        if not domain:
+            return jsonify({"error": "Domain parameter required"}), 400
+        
+        # Validate domain
+        is_valid, validation_result = validate_domain(domain)
+        if not is_valid:
+            return jsonify({"error": validation_result}), 400
+        
+        # Common DKIM selectors to try
+        common_selectors = ['default', 'google', 'selector1', 'selector2', 'k1', 'k2', 'mail']
+        suggestions = []
+        
+        for selector in common_selectors:
+            try:
+                dkim_records = dns.resolver.resolve(f"{selector}._domainkey.{validation_result}", 'TXT')
+                records = [record.to_text().strip('"') for record in dkim_records]
+                if records:
+                    suggestions.append({
+                        "selector": selector,
+                        "records": records
+                    })
+            except dns.resolver.NXDOMAIN:
+                continue
+            except Exception:
+                continue
+        
+        return jsonify({
+            "success": True,
+            "domain": validation_result,
+            "suggestions": suggestions,
+            "total_found": len(suggestions)
+        })
+        
+    except Exception as e:
+        logger.error(f"DKIM selector suggestions error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/test-email', methods=['GET'])
+def test_email_config():
+    """Test email configuration"""
+    try:
+        if not EMAIL_PASSWORD:
+            return jsonify({
+                "success": False,
+                "error": "Email password not configured"
+            }), 400
+        
+        # Test SMTP connection
+        server = smtplib.SMTP(EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT)
+        server.starttls()
+        
+        # Try different authentication methods
+        try:
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            logger.info("Test: SMTP authentication successful with LOGIN")
+        except Exception as login_error:
+            logger.warning(f"Test: LOGIN authentication failed: {login_error}")
+            # Try PLAIN authentication as fallback
+            try:
+                server.ehlo()
+                server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+                logger.info("Test: SMTP authentication successful with PLAIN")
+            except Exception as plain_error:
+                logger.error(f"Test: PLAIN authentication also failed: {plain_error}")
+                raise plain_error
+        
+        server.quit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Email configuration is working",
+            "config": {
+                "smtp_server": EMAIL_SMTP_SERVER,
+                "smtp_port": EMAIL_SMTP_PORT,
+                "username": EMAIL_USERNAME,
+                "sender": EMAIL_SENDER,
+                "password_configured": bool(EMAIL_PASSWORD)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Email configuration test failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "config": {
+                "smtp_server": EMAIL_SMTP_SERVER,
+                "smtp_port": EMAIL_SMTP_PORT,
+                "username": EMAIL_USERNAME,
+                "sender": EMAIL_SENDER,
+                "password_configured": bool(EMAIL_PASSWORD)
+            }
+        }), 500
 
 # Email report endpoint
 @app.route('/api/email-report', methods=['POST'])

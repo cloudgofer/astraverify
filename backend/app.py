@@ -1065,7 +1065,39 @@ def complete_dkim_check():
     
     # Calculate security score
     dmarc_result = get_dmarc_details(domain)
-    security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+    
+    # Add debugging and error handling for security score calculation
+    try:
+        logger.info(f"Calculating security score for {domain}")
+        logger.info(f"MX result: {mx_result}")
+        logger.info(f"SPF result: {spf_result}")
+        logger.info(f"DMARC result: {dmarc_result}")
+        logger.info(f"DKIM result: {dkim_result}")
+        
+        security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+        logger.info(f"Security score calculated: {security_score}")
+    except Exception as e:
+        logger.error(f"Error calculating security score for {domain}: {e}")
+        # Provide a fallback security score
+        security_score = {
+            'score': 0,
+            'grade': 'F',
+            'status': 'Error',
+            'max_score': 100,
+            'base_score': 0,
+            'bonus_points': 0,
+            'max_bonus': 10,
+            'scoring_details': {
+                'mx_base': 0,
+                'mx_bonus': 0,
+                'spf_base': 0,
+                'spf_bonus': 0,
+                'dmarc_base': 0,
+                'dmarc_bonus': 0,
+                'dkim_base': 0,
+                'dkim_bonus': 0
+            }
+        }
     
     # Generate recommendations
     recommendations = []
@@ -1200,14 +1232,19 @@ def complete_dkim_check():
     except Exception as e:
         logger.warning(f"Failed to store progressive analysis in Firestore: {e}")
     
-    return jsonify({
+    # Add debugging for response
+    response_data = {
         "domain": domain,
         "dkim": dkim_response,
         "email_provider": email_provider,
         "security_score": security_score,
         "recommendations": recommendations,
         "completed": True
-    })
+    }
+    
+    logger.info(f"DKIM endpoint response for {domain}: {response_data}")
+    
+    return jsonify(response_data)
 
 @app.route('/api/analytics/recent', methods=['GET'])
 @require_admin_auth

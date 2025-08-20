@@ -3,6 +3,15 @@ import config from './config.local';
 import { getFooterText } from './version';
 import './App.css';
 
+// Global error handler to catch unhandled errors
+window.addEventListener('error', (event) => {
+  console.error('Global error caught:', event.error);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('Unhandled promise rejection:', event.reason);
+});
+
 function App() {
   const [domain, setDomain] = useState('');
   const [result, setResult] = useState(null);
@@ -78,6 +87,27 @@ function App() {
       const progressiveData = await progressiveResponse.json();
       progressiveData.analysis_timestamp = new Date().toISOString();
       console.log('PROGRESSIVE LOADING: Received progressive data:', progressiveData);
+      
+      // Ensure security_score exists to prevent undefined errors
+      if (!progressiveData.security_score) {
+        progressiveData.security_score = {
+          score: 0,
+          status: 'Analyzing...',
+          base_score: 0,
+          bonus_points: 0,
+          scoring_details: {
+            mx_base: 0,
+            mx_bonus: 0,
+            spf_base: 0,
+            spf_bonus: 0,
+            dmarc_base: 0,
+            dmarc_bonus: 0,
+            dkim_base: 0,
+            dkim_bonus: 0
+          }
+        };
+      }
+      
       setResult(progressiveData);
       
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -256,6 +286,11 @@ function App() {
     if (score >= 50) return 'Fair security configuration.';
     if (score >= 25) return 'Poor security configuration.';
     return 'Very poor security configuration.';
+  };
+
+  // Helper function to safely get scoring details
+  const getScoringDetail = (component, field) => {
+    return result?.security_score?.scoring_details?.[`${component}_${field}`] || 0;
   };
 
   const getComponentScore = (base, bonus = 0, componentName = null) => {
@@ -472,7 +507,7 @@ function App() {
         checkDomain(domainParam);
       }, 500);
     }
-  }, []); // Only run once on mount
+  }, [domain, loading, isEditing, checkDomain]); // Include all dependencies
 
     const refreshStatistics = async () => {
     try {
@@ -670,11 +705,11 @@ function App() {
                 <h2>Overall Security Score</h2>
                 <div className="score-display">
                   <div className="main-score">
-                    <span className="score-number">{result.security_score.score}</span>
+                    <span className="score-number">{result.security_score?.score || 0}</span>
                     <span className="score-out-of">out of 100</span>
                   </div>
                   <div className="grade-display">
-                    <span className="grade">{getScoreGrade(result.security_score.score)}</span>
+                    <span className="grade">{getScoreGrade(result.security_score?.score || 0)}</span>
                     <span className="grade-label">Security Grade</span>
                   </div>
                 </div>
@@ -682,30 +717,30 @@ function App() {
                   <div 
                     className="progress-fill" 
                     style={{ 
-                      width: `${result.security_score.score}%`,
-                      backgroundColor: getScoreColor(result.security_score.score)
+                                  width: `${result.security_score?.score || 0}%`,
+            backgroundColor: getScoreColor(result.security_score?.score || 0)
                     }}
                   ></div>
                 </div>
-                <p className="score-message">{getScoreStatus(result.security_score.score)}</p>
+                <p className="score-message">{getScoreStatus(result.security_score?.score || 0)}</p>
               </div>
             )}
 
             {/* Score Breakdown Section - Only show when analysis is complete */}
-            {result.security_score && result.security_score.scoring_details && !result.progressive && (
+            {result.security_score?.scoring_details && !result.progressive && (
               <div className="score-breakdown">
                 <h3>Score Breakdown</h3>
                 <div className="base-score">
-                  <h4>Base Score: {result.security_score.base_score}/100</h4>
+                  <h4>Base Score: {result.security_score?.base_score || 0}/100</h4>
                   <div className="score-components">
                     <div className="score-component">
                       <span className="component-name">MX Records:</span>
-                      <span className={`component-score ${result.security_score.scoring_details.mx_base === 0 ? 'zero' : ''}`}>
-                        {result.security_score.scoring_details.mx_base}/{getComponentMaxScore('mx')} pts
-                      </span>
-                      {result.security_score.scoring_details.mx_bonus > 0 && (
-                        <span className="bonus-indicator-score">+{result.security_score.scoring_details.mx_bonus} Bonus</span>
-                      )}
+                              <span className={`component-score ${(result.security_score?.scoring_details?.mx_base || 0) === 0 ? 'zero' : ''}`}>
+          {result.security_score?.scoring_details?.mx_base || 0}/{getComponentMaxScore('mx')} pts
+        </span>
+        {(result.security_score?.scoring_details?.mx_bonus || 0) > 0 && (
+          <span className="bonus-indicator-score">+{result.security_score?.scoring_details?.mx_bonus || 0} Bonus</span>
+        )}
                     </div>
                     <div className="score-component">
                       <span className="component-name">SPF Records:</span>
@@ -736,9 +771,9 @@ function App() {
                     </div>
                   </div>
                 </div>
-                {result.security_score.bonus_points > 0 && (
-                  <div className="bonus-summary">
-                    <h4>Bonus Points: +{result.security_score.bonus_points}</h4>
+                            {(result.security_score?.bonus_points || 0) > 0 && (
+              <div className="bonus-summary">
+                <h4>Bonus Points: +{result.security_score?.bonus_points || 0}</h4>
                     <p>Additional points for advanced security configurations</p>
                   </div>
                 )}
@@ -752,21 +787,21 @@ function App() {
                 <div className="summary-cards">
                   <div className="summary-card primary">
                     <h4>Overall Assessment</h4>
-                    <p>Your domain has {result.security_score.score >= 75 ? 'strong' : result.security_score.score >= 50 ? 'moderate' : 'weak'} email security configured. {result.security_score.score >= 75 ? "You're well-protected against most email-based attacks." : result.security_score.score >= 50 ? "There's room for improvement to enhance your security posture." : "Immediate action is recommended to improve your security."}</p>
+                    <p>Your domain has {(result.security_score?.score || 0) >= 75 ? 'strong' : (result.security_score?.score || 0) >= 50 ? 'moderate' : 'weak'} email security configured. {(result.security_score?.score || 0) >= 75 ? "You're well-protected against most email-based attacks." : (result.security_score?.score || 0) >= 50 ? "There's room for improvement to enhance your security posture." : "Immediate action is recommended to improve your security."}</p>
                   </div>
                   <div className="summary-cards-row">
                     <div className="summary-card">
                       <h4>Security Level</h4>
                       <div className="security-level">
-                        <span className="level-text">{result.security_score.status}</span>
+                        <span className="level-text">{result.security_score?.status || 'Analyzing...'}</span>
                         <span className="level-detail">
-                          {result.security_score.scoring_details ? Object.values(result.security_score.scoring_details).filter((score, index) => index % 2 === 0 && score > 0).length : 0}/4 email security components properly configured
+                          {result.security_score?.scoring_details ? Object.values(result.security_score.scoring_details).filter((score, index) => index % 2 === 0 && score > 0).length : 0}/4 email security components properly configured
                         </span>
                       </div>
                     </div>
                     <div className="summary-card">
                       <h4>Grade Meaning</h4>
-                      <p>{result.security_score.score >= 90 ? 'Outstanding email security. Your domain is extremely well-protected.' : result.security_score.score >= 75 ? 'Good email security. Your domain is well-protected.' : result.security_score.score >= 50 ? 'Fair email security. Some improvements recommended.' : 'Poor email security. Immediate action required.'}</p>
+                      <p>{(result.security_score?.score || 0) >= 90 ? 'Outstanding email security. Your domain is extremely well-protected.' : (result.security_score?.score || 0) >= 75 ? 'Good email security. Your domain is well-protected.' : (result.security_score?.score || 0) >= 50 ? 'Fair email security. Some improvements recommended.' : 'Poor email security. Immediate action required.'}</p>
                     </div>
                   </div>
                   <div className="component-status-cards">
