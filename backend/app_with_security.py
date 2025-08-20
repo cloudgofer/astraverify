@@ -794,10 +794,273 @@ def check_domain():
     
     return jsonify(results)
 
+def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
+    """Send email report with analysis results"""
+    try:
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['From'] = f'AstraVerify <{EMAIL_SENDER}>'
+        msg['To'] = to_email
+        msg['Subject'] = f'AstraVerify Security Report for {domain}'
+        
+        # Add anti-spam headers
+        msg['Message-ID'] = f'<{domain}-{int(datetime.now().timestamp())}@astraverify.com>'
+        msg['Date'] = datetime.now().strftime('%a, %d %b %Y %H:%M:%S %z')
+        msg['X-Mailer'] = 'AstraVerify Email System'
+        msg['X-Priority'] = '3'
+        msg['X-MSMail-Priority'] = 'Normal'
+        msg['Importance'] = 'Normal'
+        msg['MIME-Version'] = '1.0'
+        
+        # Add unsubscribe header for marketing emails
+        if opt_in_marketing:
+            msg['List-Unsubscribe'] = '<https://astraverify.com/unsubscribe>'
+            msg['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
+        
+        # Determine frontend URL based on environment
+        if ENVIRONMENT == 'staging':
+            frontend_url = 'https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app'
+        elif ENVIRONMENT == 'local':
+            frontend_url = 'http://localhost:3000'
+        else:
+            frontend_url = 'https://astraverify-frontend-ml2mhibdvq-uc.a.run.app'
+        
+        logger.info(f"Email environment: {ENVIRONMENT}, frontend URL: {frontend_url}")
+        
+        # Get score and grade
+        score = analysis_result.get('security_score', 0)
+        # Handle case where security_score is a dictionary
+        if isinstance(score, dict):
+            score = score.get('score', 0)
+        grade = get_score_grade(score)
+        
+        # Get component details
+        mx = analysis_result.get('mx', {})
+        spf = analysis_result.get('spf', {})
+        dkim = analysis_result.get('dkim', {})
+        dmarc = analysis_result.get('dmarc', {})
+        
+        # Create HTML content
+        html_content = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .header {{ text-align: center; margin-bottom: 30px; }}
+                .domain {{ font-size: 24px; font-weight: bold; color: #333; margin: 20px 0; }}
+                .domain a {{ color: #007bff; text-decoration: none; font-weight: bold; border-bottom: 1px dotted #007bff; }}
+                .domain a:hover {{ color: #0056b3; text-decoration: underline; border-bottom: 1px solid #0056b3; }}
+                .score-section {{ text-align: center; margin: 30px 0; }}
+                .score {{ font-size: 36px; font-weight: bold; color: #333; }}
+                .grade {{ font-size: 18px; color: #666; margin: 10px 0; }}
+                .component {{ margin: 20px 0; padding: 15px; border-radius: 5px; }}
+                .component.valid {{ background: #d4edda; border-left: 4px solid #28a745; }}
+                .component.invalid {{ background: #f8d7da; border-left: 4px solid #dc3545; }}
+                .component h3 {{ margin: 0 0 10px 0; color: #333; }}
+                .status {{ font-weight: bold; margin: 5px 0; }}
+                .status.valid {{ color: #28a745; }}
+                .status.invalid {{ color: #dc3545; }}
+                .description {{ margin: 10px 0; color: #666; }}
+                .issues-section {{ margin: 30px 0; }}
+                .recommendations-section {{ margin: 30px 0; }}
+                .issue {{ margin: 10px 0; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; }}
+                .recommendation {{ margin: 10px 0; padding: 10px; background: #d1ecf1; border-left: 4px solid #17a2b8; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; text-align: center; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🛡️ Domain Security Analysis</h1>
+                    <div class="domain">
+                        <a href="{frontend_url}?domain={domain}" style="color: #007bff; text-decoration: none; font-weight: bold;">{domain}</a>
+                    </div>
+                </div>
+                
+                <div class="score-section">
+                    <div class="score">{grade}</div>
+                    <div class="grade">{score}/100 - {get_security_status(score)}</div>
+                </div>
+                
+                <div class="component {'valid' if mx.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if mx.get('enabled') else '❌'} MX Records</h3>
+                    <div class="status {'valid' if mx.get('enabled') else 'invalid'}">
+                        Status: {mx.get('status', 'Unknown')}
+                    </div>
+                    <div class="description">
+                        {mx.get('description', '')}
+                    </div>
+                </div>
+                
+                <div class="component {'valid' if spf.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if spf.get('enabled') else '❌'} SPF Record</h3>
+                    <div class="status {'valid' if spf.get('enabled') else 'invalid'}">
+                        Status: {spf.get('status', 'Unknown')}
+                    </div>
+                    <div class="description">
+                        {spf.get('description', '')}
+                    </div>
+                </div>
+                
+                <div class="component {'valid' if dkim.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if dkim.get('enabled') else '❌'} DKIM Record</h3>
+                    <div class="status {'valid' if dkim.get('enabled') else 'invalid'}">
+                        Status: {dkim.get('status', 'Unknown')}
+                    </div>
+                    <div class="description">
+                        {dkim.get('description', '')}
+                    </div>
+                </div>
+                
+                <div class="component {'valid' if dmarc.get('enabled') else 'invalid'}">
+                    <h3>{'✅' if dmarc.get('enabled') else '❌'} DMARC Record</h3>
+                    <div class="status {'valid' if dmarc.get('enabled') else 'invalid'}">
+                        Status: {dmarc.get('status', 'Unknown')}
+                    </div>
+                    <div class="description">
+                        {dmarc.get('description', '')}
+                    </div>
+                </div>
+        """
+        
+        # Add issues section if there are problems
+        issues = []
+        if not dkim.get('enabled'):
+            issues.append("No DKIM records found - emails may be marked as spam")
+        if not spf.get('enabled'):
+            issues.append("No SPF record found - domain vulnerable to email spoofing")
+        if not dmarc.get('enabled'):
+            issues.append("No DMARC record found - email authentication not enforced")
+        
+        if issues:
+            html_content += """
+                <div class="issues-section">
+                    <h3>🔍 Issues Found</h3>
+            """
+            for issue in issues:
+                html_content += f"""
+                    <div class="issue">
+                        {issue}
+                    </div>
+                """
+            html_content += "</div>"
+        
+        # Add recommendations section
+        if analysis_result.get('recommendations'):
+            html_content += """
+                <div class="recommendations-section">
+                    <h3>💡 Recommendations</h3>
+            """
+            for rec in analysis_result.get('recommendations', []):
+                html_content += f"""
+                    <div class="recommendation">
+                        <strong>{rec.get('title', '')}</strong><br>
+                        {rec.get('description', '')}
+                    </div>
+                """
+            html_content += "</div>"
+        
+        # Add footer with current date and version
+        current_date = datetime.now().strftime("%B %d, %Y")
+        
+        # Read version from VERSION file
+        try:
+            with open('VERSION', 'r') as f:
+                version = f.read().strip()
+        except:
+            version = "2025.08.15.01-Beta"
+        
+        html_content += f"""
+                <div class="footer">
+                    <p>Report generated on {current_date}</p>
+                    <p>Generated by AstraVerify - Email Domain Security Analysis Tool</p>
+                    <p style="font-size: 11px; color: #999; margin-top: 20px;">
+                        This email was sent to {to_email} in response to a security analysis request for {domain}.<br>
+                        If you did not request this report, please ignore this email.
+                    </p>
+                    <p style="font-size: 10px; color: #999; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">
+                        v{version} | © AstraVerify.com - a CloudGofer.com service
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Attach HTML content
+        html_part = MIMEText(html_content, 'html')
+        msg.attach(html_part)
+        
+        # Send email
+        logger.info(f"Attempting to send email to {to_email} via {EMAIL_SMTP_SERVER}:{EMAIL_SMTP_PORT}")
+        
+        server = smtplib.SMTP(EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT)
+        logger.info("SMTP connection established")
+        
+        server.starttls()
+        logger.info("TLS started")
+        
+        # Try different authentication methods
+        try:
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            logger.info("SMTP authentication successful with LOGIN")
+        except Exception as login_error:
+            logger.warning(f"LOGIN authentication failed: {login_error}")
+            # Try PLAIN authentication as fallback
+            try:
+                server.ehlo()
+                server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+                logger.info("SMTP authentication successful with PLAIN")
+            except Exception as plain_error:
+                logger.error(f"PLAIN authentication also failed: {plain_error}")
+                raise plain_error
+        
+        text = msg.as_string()
+        server.sendmail(EMAIL_SENDER, to_email, text)
+        logger.info("Email sent successfully")
+        
+        server.quit()
+        logger.info(f"Email report sent successfully to {to_email} for domain {domain}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return False
+
+def get_score_grade(score):
+    """Get letter grade for security score"""
+    if score >= 95: return 'A+'
+    if score >= 90: return 'A'
+    if score >= 85: return 'A-'
+    if score >= 80: return 'B+'
+    if score >= 75: return 'B'
+    if score >= 70: return 'B-'
+    if score >= 65: return 'C+'
+    if score >= 60: return 'C'
+    if score >= 55: return 'C-'
+    if score >= 50: return 'D+'
+    if score >= 45: return 'D'
+    if score >= 40: return 'D-'
+    return 'F'
+
+def get_security_status(score):
+    """Get security status based on score"""
+    if score >= 90:
+        return "Excellent Security"
+    elif score >= 80:
+        return "Good Security"
+    elif score >= 70:
+        return "Fair Security"
+    elif score >= 60:
+        return "Poor Security"
+    else:
+        return "Poor Security"
+
 # Email report endpoint
 @app.route('/api/email-report', methods=['POST'])
 def email_report():
-    """Email report endpoint with enhanced validation"""
+    """Email report endpoint with enhanced validation and email sending"""
     try:
         data = request.get_json()
         
@@ -823,14 +1086,37 @@ def email_report():
         timestamp = datetime.utcnow()
         opt_in_marketing = data.get('opt_in_marketing', False)
         
-        success = firestore_manager.store_email_report(
-            email, domain, data['analysis_result'], opt_in_marketing, timestamp
-        )
+        try:
+            success = firestore_manager.store_email_report(
+                email, domain, data['analysis_result'], opt_in_marketing, timestamp
+            )
+            logger.info(f"Email report stored in Firestore for {domain} to {email}")
+        except Exception as e:
+            logger.error(f"Failed to store email report in Firestore: {e}")
+            # Continue with email sending even if Firestore storage fails
         
-        if success:
-            return jsonify({"message": "Email report stored successfully"}), 200
+        # Send actual email
+        if EMAIL_PASSWORD:
+            email_sent = send_email_report(email, domain, data['analysis_result'], opt_in_marketing)
+            if email_sent:
+                return jsonify({
+                    "success": True,
+                    "message": "Email report sent successfully",
+                    "email_sent": True,
+                    "email_configured": True
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": "Failed to send email"
+                }), 500
         else:
-            return jsonify({"error": "Failed to store email report"}), 500
+            # If no email password configured, return error
+            return jsonify({
+                "success": False,
+                "error": "Email sending is not configured on this server",
+                "email_configured": False
+            }), 503
             
     except Exception as e:
         logger.error(f"Email report error: {e}")
