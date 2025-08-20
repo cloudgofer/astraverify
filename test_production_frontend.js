@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const https = require('https');
+const http = require('http');
 
 // Colors for output
 const colors = {
@@ -59,156 +60,103 @@ function makeRequest(url, options = {}) {
     });
 }
 
+// Test production frontend
 async function testProductionFrontend() {
-    log('🚀 Testing Production Frontend Issue', 'bright');
-    log('==================================================', 'blue');
-
-    const BACKEND_URL = 'https://astraverify-backend-ml2mhibdvq-uc.a.run.app';
-    const FRONTEND_URL = 'https://astraverify.com';
-
-    log(`Backend URL: ${BACKEND_URL}`, 'cyan');
-    log(`Frontend URL: ${FRONTEND_URL}`, 'cyan');
-    log('==================================================\n', 'blue');
-
-    // Test 1: Check if frontend loads
-    log('1. Testing Frontend Loading...', 'yellow');
-    try {
-        const frontendResponse = await makeRequest(FRONTEND_URL);
-        if (frontendResponse.status === 200) {
-            log('✅ Frontend loads successfully', 'green');
-            
-            // Check if it contains the expected content
-            if (frontendResponse.data.includes('AstraVerify') && frontendResponse.data.includes('root')) {
-                log('✅ Frontend contains expected React app structure', 'green');
-            } else {
-                log('⚠️  Frontend content may be incomplete', 'yellow');
-            }
-        } else {
-            log('❌ Frontend loading failed', 'red');
-            log(`   Status: ${frontendResponse.status}`, 'red');
-        }
-    } catch (error) {
-        log('❌ Frontend loading failed', 'red');
-        log(`   Error: ${error.message}`, 'red');
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Test 2: Check backend API that frontend calls
-    log('\n2. Testing Backend APIs that Frontend Uses...', 'yellow');
+    console.log('🔍 Testing Production Frontend...');
     
-    // Test statistics endpoint
+    const frontendUrl = 'https://astraverify-frontend-ml2mhibdvq-uc.a.run.app';
+    const backendUrl = 'https://astraverify-backend-ml2mhibdvq-uc.a.run.app';
+    
     try {
-        const statsResponse = await makeRequest(`${BACKEND_URL}/api/public/statistics`);
-        if (statsResponse.status === 200 && statsResponse.data.success) {
-            log('✅ Statistics API working', 'green');
-            log(`   Total analyses: ${statsResponse.data.data.total_analyses}`, 'cyan');
+        // Test 1: Check if frontend loads
+        console.log('\n1. Testing frontend accessibility...');
+        const frontendResponse = await fetch(frontendUrl);
+        console.log(`Frontend Status: ${frontendResponse.status}`);
+        console.log(`Frontend Content-Type: ${frontendResponse.headers.get('content-type')}`);
+        
+        const frontendHtml = await frontendResponse.text();
+        console.log(`Frontend HTML Length: ${frontendHtml.length} characters`);
+        
+        // Check if React root div exists
+        if (frontendHtml.includes('<div id="root"></div>')) {
+            console.log('✅ React root div found');
         } else {
-            log('❌ Statistics API failed', 'red');
-            log(`   Status: ${statsResponse.status}`, 'red');
+            console.log('❌ React root div not found');
         }
-    } catch (error) {
-        log('❌ Statistics API failed', 'red');
-        log(`   Error: ${error.message}`, 'red');
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Test domain check endpoint
-    try {
-        const domainResponse = await makeRequest(`${BACKEND_URL}/api/check?domain=cloudgofer.com`);
-        if (domainResponse.status === 200 && domainResponse.data.domain === 'cloudgofer.com') {
-            log('✅ Domain check API working', 'green');
-            log(`   Security score: ${domainResponse.data.security_score}`, 'cyan');
+        
+        // Check if JavaScript files are referenced
+        if (frontendHtml.includes('main.a14e80d4.js')) {
+            console.log('✅ Main JavaScript file referenced');
         } else {
-            log('❌ Domain check API failed', 'red');
-            log(`   Status: ${domainResponse.status}`, 'red');
+            console.log('❌ Main JavaScript file not found');
         }
-    } catch (error) {
-        log('❌ Domain check API failed', 'red');
-        log(`   Error: ${error.message}`, 'red');
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Test 3: Check for CORS issues
-    log('\n3. Testing CORS Configuration...', 'yellow');
-    try {
-        const corsResponse = await makeRequest(`${BACKEND_URL}/api/health`, {
+        
+        // Test 2: Check if JavaScript file loads
+        console.log('\n2. Testing JavaScript file accessibility...');
+        const jsUrl = `${frontendUrl}/static/js/main.a14e80d4.js`;
+        const jsResponse = await fetch(jsUrl);
+        console.log(`JavaScript Status: ${jsResponse.status}`);
+        
+        if (jsResponse.ok) {
+            const jsContent = await jsResponse.text();
+            console.log(`JavaScript Content Length: ${jsContent.length} characters`);
+            console.log('✅ JavaScript file loads successfully');
+        } else {
+            console.log('❌ JavaScript file failed to load');
+        }
+        
+        // Test 3: Check backend API
+        console.log('\n3. Testing backend API...');
+        const apiResponse = await fetch(`${backendUrl}/api/health`);
+        console.log(`API Status: ${apiResponse.status}`);
+        
+        if (apiResponse.ok) {
+            const apiData = await apiResponse.json();
+            console.log('✅ Backend API working:', apiData);
+        } else {
+            console.log('❌ Backend API failed');
+        }
+        
+        // Test 4: Test domain check API
+        console.log('\n4. Testing domain check API...');
+        const domainCheckUrl = `${backendUrl}/api/check?domain=example.com&progressive=true`;
+        const domainResponse = await fetch(domainCheckUrl);
+        console.log(`Domain Check Status: ${domainResponse.status}`);
+        
+        if (domainResponse.ok) {
+            const domainData = await domainResponse.json();
+            console.log('✅ Domain check API working');
+            console.log('Response keys:', Object.keys(domainData));
+        } else {
+            const errorText = await domainResponse.text();
+            console.log('❌ Domain check API failed:', errorText.substring(0, 200));
+        }
+        
+        // Test 5: Check CORS headers
+        console.log('\n5. Testing CORS configuration...');
+        const corsResponse = await fetch(`${backendUrl}/api/health`, {
+            method: 'OPTIONS',
             headers: {
-                'Origin': 'https://astraverify.com',
-                'Referer': 'https://astraverify.com/'
+                'Origin': frontendUrl,
+                'Access-Control-Request-Method': 'GET',
+                'Access-Control-Request-Headers': 'Content-Type'
             }
         });
         
-        if (corsResponse.status === 200) {
-            log('✅ CORS appears to be working', 'green');
-            if (corsResponse.headers['access-control-allow-origin']) {
-                log(`   CORS header: ${corsResponse.headers['access-control-allow-origin']}`, 'cyan');
-            }
-        } else {
-            log('❌ CORS may be blocking requests', 'red');
-        }
-    } catch (error) {
-        log('❌ CORS test failed', 'red');
-        log(`   Error: ${error.message}`, 'red');
-    }
-
-    // Test 4: Check if there are any JavaScript errors by examining the build
-    log('\n4. Analyzing Frontend Build...', 'yellow');
-    try {
-        const jsResponse = await makeRequest('https://astraverify.com/static/js/main.a14e80d4.js');
-        if (jsResponse.status === 200) {
-            log('✅ JavaScript bundle loads successfully', 'green');
-            log(`   Bundle size: ${jsResponse.data.length} bytes`, 'cyan');
-            
-            // Check for common error patterns
-            if (jsResponse.data.includes('error') || jsResponse.data.includes('Error')) {
-                log('⚠️  JavaScript bundle contains error-related code', 'yellow');
-            }
-        } else {
-            log('❌ JavaScript bundle failed to load', 'red');
-        }
-    } catch (error) {
-        log('❌ JavaScript bundle test failed', 'red');
-        log(`   Error: ${error.message}`, 'red');
-    }
-
-    // Test 5: Simulate the exact flow that might cause blanking
-    log('\n5. Simulating Frontend-Backend Interaction...', 'yellow');
-    try {
-        // First get statistics (what frontend does on load)
-        const statsResponse = await makeRequest(`${BACKEND_URL}/api/public/statistics`);
+        console.log(`CORS Status: ${corsResponse.status}`);
+        console.log(`CORS Origin: ${corsResponse.headers.get('access-control-allow-origin')}`);
+        console.log(`CORS Methods: ${corsResponse.headers.get('access-control-allow-methods')}`);
         
-        // Then simulate a domain check (what happens after user input)
-        const domainResponse = await makeRequest(`${BACKEND_URL}/api/check?domain=cloudgofer.com`);
-        
-        if (statsResponse.status === 200 && domainResponse.status === 200) {
-            log('✅ Backend APIs respond correctly to frontend requests', 'green');
-            log('   This suggests the issue is in frontend JavaScript, not backend', 'cyan');
+        if (corsResponse.headers.get('access-control-allow-origin') === frontendUrl) {
+            console.log('✅ CORS configured correctly');
         } else {
-            log('❌ Backend APIs have issues', 'red');
+            console.log('❌ CORS configuration issue');
         }
+        
     } catch (error) {
-        log('❌ Frontend-backend interaction test failed', 'red');
-        log(`   Error: ${error.message}`, 'red');
+        console.error('❌ Test failed:', error.message);
     }
-
-    log('\n==================================================', 'blue');
-    log('🔍 DIAGNOSIS SUMMARY', 'bright');
-    log('==================================================', 'blue');
-    log('Based on the tests above:', 'cyan');
-    log('1. If backend APIs work but frontend blanks out, the issue is likely:', 'yellow');
-    log('   - JavaScript error in the React app', 'red');
-    log('   - CORS configuration issue', 'red');
-    log('   - Frontend trying to call non-existent endpoints', 'red');
-    log('   - State management issue in React', 'red');
-    log('2. If backend APIs fail, the issue is in the backend', 'yellow');
-    log('3. If frontend doesn\'t load at all, it\'s a deployment issue', 'yellow');
-    log('\n==================================================', 'blue');
-    log('Next steps: Check browser console for JavaScript errors', 'bright');
-    log('==================================================', 'blue');
 }
 
 // Run the test
-testProductionFrontend().catch(console.error);
+testProductionFrontend();

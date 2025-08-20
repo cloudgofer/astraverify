@@ -1213,32 +1213,348 @@ def get_domain_history(domain):
         logger.error(f"Failed to get history for {domain}: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
+    """
+    Calculate comprehensive security score with bonus points.
+    
+    Base Scoring (100 points total):
+    - MX Records: 25 points (essential for email delivery)
+    - SPF Records: 25 points (prevents email spoofing)
+    - DMARC Records: 30 points (authentication reporting)
+    - DKIM Records: 20 points (email authentication)
+    
+    Bonus Points (up to 10 additional points):
+    - Multiple MX records: +2 points (redundancy)
+    - Strong SPF policy: +1-2 points (-all > ~all > ?all)
+    - Strict DMARC policy: +1-2 points (p=reject > p=quarantine)
+    - Multiple DKIM selectors: +2 points (diversity) - only for non-Google providers
+    - 100% DMARC coverage: +1 point (pct=100)
+    """
+    score = 0
+    max_score = 100
+    bonus_points = 0
+    max_bonus = 10
+    scoring_details = {}
+    
+    # Base scoring (MX: 25, SPF: 25, DMARC: 30, DKIM: 20)
+    if mx_result['has_mx']:
+        # Check if MX records are actually functional
+        functional_mx = False
+        for record in mx_result['records']:
+            server = record.get('server', '')
+            # Skip non-functional servers like "." or empty strings
+            if server and server != '.' and server != '':
+                functional_mx = True
+                break
+        
+        if functional_mx:
+            score += 25
+            scoring_details['mx_base'] = 25
+            # Bonus for multiple MX records (redundancy)
+            if len(mx_result['records']) > 1:
+                bonus_points += 2
+                scoring_details['mx_bonus'] = 2
+            else:
+                scoring_details['mx_bonus'] = 0
+        else:
+            # MX records exist but are not functional
+            scoring_details['mx_base'] = 0
+            scoring_details['mx_bonus'] = 0
+    else:
+        scoring_details['mx_base'] = 0
+        scoring_details['mx_bonus'] = 0
+    
+    if spf_result['has_spf']:
+        score += 25
+        scoring_details['spf_base'] = 25
+        # Bonus for strong SPF policy
+        spf_bonus = 0
+        for record in spf_result['records']:
+            if '-all' in record['record']:
+                spf_bonus += 2  # Strongest policy
+            elif '~all' in record['record']:
+                spf_bonus += 1  # Medium policy
+            elif '?all' in record['record']:
+                spf_bonus += 0.5  # Weakest policy
+        bonus_points += spf_bonus
+        scoring_details['spf_bonus'] = spf_bonus
+    else:
+        scoring_details['spf_base'] = 0
+        scoring_details['spf_bonus'] = 0
+    
+    if dmarc_result['has_dmarc']:
+        score += 30
+        scoring_details['dmarc_base'] = 30
+        # Bonus for strong DMARC policy
+        dmarc_bonus = 0
+        for record in dmarc_result['records']:
+            if 'p=reject' in record['record']:
+                dmarc_bonus += 2  # Strictest policy
+            elif 'p=quarantine' in record['record']:
+                dmarc_bonus += 1  # Medium policy
+            if 'pct=100' in record['record']:
+                dmarc_bonus += 1  # 100% coverage
+        bonus_points += dmarc_bonus
+        scoring_details['dmarc_bonus'] = dmarc_bonus
+    else:
+        scoring_details['dmarc_base'] = 0
+        scoring_details['dmarc_bonus'] = 0
+    
+    if dkim_result['has_dkim']:
+        score += 20
+        scoring_details['dkim_base'] = 20
+        # Bonus for multiple DKIM selectors (only for non-Google providers)
+        provider = detect_email_provider(mx_result, spf_result, dkim_result)
+        if len(dkim_result['records']) > 1 and provider != "Google Workspace":
+            bonus_points += 2
+            scoring_details['dkim_bonus'] = 2
+        else:
+            scoring_details['dkim_bonus'] = 0
+    else:
+        scoring_details['dkim_base'] = 0
+        scoring_details['dkim_bonus'] = 0
+    
+    # Apply bonus points (capped at max_bonus)
+    final_score = min(score + bonus_points, max_score)
+    
+    # Determine grade and status
+    if final_score >= 90:
+        grade = 'A'
+        status = 'Excellent'
+    elif final_score >= 75:
+        grade = 'B'
+        status = 'Good'
+    elif final_score >= 50:
+        grade = 'C'
+        status = 'Fair'
+    elif final_score >= 25:
+        grade = 'D'
+        status = 'Poor'
+    else:
+        grade = 'F'
+        status = 'Very Poor'
+    
+    return {
+        'score': round(final_score, 1),
+        'grade': grade,
+        'status': status,
+        'max_score': max_score,
+        'base_score': score,
+        'bonus_points': round(bonus_points, 1),
+        'max_bonus': max_bonus,
+        'scoring_details': scoring_details
+    }
+
+
 @app.route('/api/check/dkim', methods=['GET'])
 def check_dkim_endpoint():
-    """Check DKIM for a domain"""
+    """Complete DKIM check for progressive mode (optimized)"""
     try:
         domain = request.args.get('domain')
+        custom_selector = request.args.get('dkim_selector')
+        
         if not domain:
-            return jsonify({"error": "Domain parameter required"}), 400
+            return jsonify({"error": "Domain parameter is required"}), 400
         
-        # Validate domain
-        is_valid, validation_result = validate_domain(domain)
-        if not is_valid:
-            return jsonify({"error": validation_result}), 400
+        # Remove protocol if present
+        domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
         
-        # Get DKIM details
-        dkim_result = get_dkim_details(validation_result)
+        logger.info(f"Completing optimized DKIM analysis for domain: {domain}")
         
-        return jsonify({
-            "success": True,
-            "domain": validation_result,
-            "dkim": dkim_result,
-            "email_provider": detect_email_provider(
-                get_mx_details(validation_result),
-                get_spf_details(validation_result),
-                dkim_result
-            )
-        })
+        # Get MX servers for provider-specific selector prioritization
+        mx_servers = []
+        try:
+            mx_result = get_mx_details(domain)
+            if mx_result.get('has_mx'):
+                mx_servers = [record['server'] for record in mx_result.get('records', [])]
+        except:
+            pass
+        
+        # Get optimized DKIM results
+        dkim_result = dkim_optimizer_sync.get_dkim_details_optimized(domain, custom_selector, mx_servers)
+        
+        # Detect email provider based on DKIM
+        spf_result = get_spf_details(domain)
+        email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
+        
+        # Calculate security score
+        dmarc_result = get_dmarc_details(domain)
+        
+        # Add debugging and error handling for security score calculation
+        try:
+            logger.info(f"Calculating security score for {domain}")
+            security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+            logger.info(f"Security score calculated: {security_score}")
+        except Exception as e:
+            logger.error(f"Error calculating security score for {domain}: {e}")
+            # Provide a fallback security score
+            security_score = {
+                'score': 0,
+                'grade': 'F',
+                'status': 'Error',
+                'max_score': 100,
+                'base_score': 0,
+                'bonus_points': 0,
+                'max_bonus': 10,
+                'scoring_details': {
+                    'mx_base': 0,
+                    'mx_bonus': 0,
+                    'spf_base': 0,
+                    'spf_bonus': 0,
+                    'dmarc_base': 0,
+                    'dmarc_bonus': 0,
+                    'dkim_base': 0,
+                    'dkim_bonus': 0
+                }
+            }
+        
+        # Generate recommendations
+        recommendations = []
+        
+        try:
+            # Generate enhanced recommendations based on email provider
+            if not mx_result['has_mx']:
+                recommendations.append({
+                    "type": "critical",
+                    "title": "Add MX Records",
+                    "description": "MX records are essential for email delivery. Contact your DNS provider to add MX records."
+                })
+            elif len(mx_result['records']) == 1:
+                recommendations.append({
+                    "type": "info",
+                    "title": "Consider Multiple MX Records",
+                    "description": "Adding secondary MX records improves email delivery reliability and redundancy."
+                })
+            
+            if not spf_result['has_spf']:
+                if email_provider == "Google Workspace":
+                    recommendations.append({
+                        "type": "important",
+                        "title": "Add SPF Record",
+                        "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:_spf.google.com ~all' for Google Workspace."
+                    })
+                elif email_provider == "Microsoft 365":
+                    recommendations.append({
+                        "type": "important",
+                        "title": "Add SPF Record",
+                        "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:spf.protection.outlook.com ~all' for Microsoft 365."
+                    })
+                else:
+                    recommendations.append({
+                        "type": "important",
+                        "title": "Add SPF Record",
+                        "description": "SPF records help prevent email spoofing. Contact your email service provider for the correct SPF record."
+                    })
+            elif any('~all' in r['record'] for r in spf_result['records']):
+                recommendations.append({
+                    "type": "info",
+                    "title": "Strengthen SPF Policy",
+                    "description": "Consider changing '~all' to '-all' for stronger spoofing protection."
+                })
+            
+            if not dmarc_result['has_dmarc']:
+                recommendations.append({
+                    "type": "important",
+                    "title": "Add DMARC Record",
+                    "description": "DMARC records provide email authentication reporting. Add a TXT record at _dmarc.yourdomain.com with 'v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com'"
+                })
+            elif any('p=none' in r['record'] for r in dmarc_result['records']):
+                recommendations.append({
+                    "type": "info",
+                    "title": "Strengthen DMARC Policy",
+                    "description": "Consider changing 'p=none' to 'p=quarantine' or 'p=reject' for better protection."
+                })
+            
+            if not dkim_result['has_dkim']:
+                recommendations.append({
+                    "type": "info",
+                    "title": "Consider DKIM",
+                    "description": "DKIM provides email authentication. This is typically configured by your email service provider."
+                })
+            elif len(dkim_result['records']) == 1:
+                # Only recommend multiple DKIM selectors for non-Google providers
+                if email_provider != "Google Workspace":
+                    recommendations.append({
+                        "type": "info",
+                        "title": "Consider Multiple DKIM Selectors",
+                        "description": "Multiple DKIM selectors provide better authentication diversity and security."
+                    })
+                else:
+                    recommendations.append({
+                        "type": "info",
+                        "title": "DKIM Configuration Complete",
+                        "description": "Google Workspace uses a single DKIM selector which is the standard configuration."
+                    })
+        except Exception as e:
+            recommendations = []
+        
+        # Remove internal timing info
+        dkim_response = {
+            "enabled": dkim_result['has_dkim'],
+            "status": dkim_result['status'],
+            "description": dkim_result['description'],
+            "records": dkim_result['records'],
+            "selectors_checked": dkim_result.get('selectors_checked', 0)
+        }
+        
+        # Add performance info in development
+        if ENVIRONMENT == 'development' and 'check_time' in dkim_result:
+            dkim_response['check_time'] = dkim_result['check_time']
+        
+        # Compile complete results for storage
+        complete_results = {
+            "domain": domain,
+            "analysis_timestamp": None,  # Will be set by frontend
+            "security_score": security_score,
+            "email_provider": email_provider,
+            "mx": {
+                "enabled": mx_result['has_mx'],
+                "status": mx_result['status'],
+                "description": mx_result['description'],
+                "records": mx_result['records']
+            },
+            "spf": {
+                "enabled": spf_result['has_spf'],
+                "status": spf_result['status'],
+                "description": spf_result['description'],
+                "records": spf_result['records']
+            },
+            "dkim": {
+                "enabled": dkim_result['has_dkim'],
+                "status": dkim_result['status'],
+                "description": dkim_result['description'],
+                "records": dkim_result['records']
+            },
+            "dmarc": {
+                "enabled": dmarc_result['has_dmarc'],
+                "status": dmarc_result['status'],
+                "description": dmarc_result['description'],
+                "records": dmarc_result['records']
+            },
+            "recommendations": recommendations
+        }
+        
+        # Store analysis results in Firestore
+        try:
+            firestore_manager.store_analysis(domain, complete_results)
+            logger.info(f"Progressive analysis stored in Firestore for {domain}")
+        except Exception as e:
+            logger.warning(f"Failed to store progressive analysis in Firestore: {e}")
+        
+        # Add debugging for response
+        response_data = {
+            "domain": domain,
+            "dkim": dkim_response,
+            "email_provider": email_provider,
+            "security_score": security_score,
+            "recommendations": recommendations,
+            "completed": True
+        }
+        
+        logger.info(f"DKIM endpoint response for {domain}: {response_data}")
+        
+        return jsonify(response_data)
+        
     except Exception as e:
         logger.error(f"DKIM check error for {domain}: {e}")
         return jsonify({"error": "Internal server error"}), 500
