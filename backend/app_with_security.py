@@ -1114,6 +1114,249 @@ def get_security_status(score):
     else:
         return "Poor Security"
 
+# Analytics and Statistics Endpoints
+
+@app.route('/api/analytics/statistics', methods=['GET'])
+@require_admin_auth
+def get_analytics_statistics():
+    """Get analytics statistics (admin only)"""
+    try:
+        stats = firestore_manager.get_statistics()
+        return jsonify({
+            "success": True,
+            "data": stats
+        })
+    except Exception as e:
+        logger.error(f"Failed to get statistics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/public/statistics', methods=['GET'])
+def get_public_statistics():
+    """Get public statistics (no admin required)"""
+    try:
+        stats = firestore_manager.get_statistics()
+        # Return only basic stats for public consumption
+        public_stats = {
+            "total_analyses": stats.get('total_analyses', 0),
+            "unique_domains": stats.get('unique_domains', 0),
+            "average_security_score": stats.get('average_security_score', 0),
+            "email_provider_distribution": stats.get('email_provider_distribution', {})
+        }
+        return jsonify({
+            "success": True,
+            "data": public_stats
+        })
+    except Exception as e:
+        logger.error(f"Failed to get public statistics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/analytics/recent', methods=['GET'])
+@require_admin_auth
+def get_recent_analytics():
+    """Get recent analytics data"""
+    try:
+        recent_data = firestore_manager.get_recent_analytics()
+        return jsonify({
+            "success": True,
+            "data": recent_data
+        })
+    except Exception as e:
+        logger.error(f"Failed to get recent analytics: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/analytics/history/<domain>', methods=['GET'])
+@require_admin_auth
+def get_domain_history(domain):
+    """Get analysis history for a specific domain"""
+    try:
+        # Validate domain
+        is_valid, validation_result = validate_domain(domain)
+        if not is_valid:
+            return jsonify({"error": validation_result}), 400
+        
+        history = firestore_manager.get_domain_history(domain)
+        return jsonify({
+            "success": True,
+            "data": history
+        })
+    except Exception as e:
+        logger.error(f"Failed to get history for {domain}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/check/dkim', methods=['GET'])
+def check_dkim_endpoint():
+    """Check DKIM for a domain"""
+    try:
+        domain = request.args.get('domain')
+        if not domain:
+            return jsonify({"error": "Domain parameter required"}), 400
+        
+        # Validate domain
+        is_valid, validation_result = validate_domain(domain)
+        if not is_valid:
+            return jsonify({"error": validation_result}), 400
+        
+        # Get DKIM details
+        dkim_result = get_dkim_details(validation_result)
+        
+        return jsonify({
+            "success": True,
+            "domain": validation_result,
+            "dkim": dkim_result,
+            "email_provider": detect_email_provider(
+                get_mx_details(validation_result),
+                get_spf_details(validation_result),
+                dkim_result
+            )
+        })
+    except Exception as e:
+        logger.error(f"DKIM check error for {domain}: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/dkim/check-selector', methods=['GET'])
+def check_dkim_selector():
+    """Check specific DKIM selector"""
+    try:
+        domain = request.args.get('domain')
+        selector = request.args.get('selector', 'default')
+        
+        if not domain:
+            return jsonify({"error": "Domain parameter required"}), 400
+        
+        # Validate domain
+        is_valid, validation_result = validate_domain(domain)
+        if not is_valid:
+            return jsonify({"error": validation_result}), 400
+        
+        # Check specific selector
+        try:
+            dkim_records = dns.resolver.resolve(f"{selector}._domainkey.{validation_result}", 'TXT')
+            records = [record.to_text().strip('"') for record in dkim_records]
+            
+            return jsonify({
+                "success": True,
+                "domain": validation_result,
+                "selector": selector,
+                "records": records,
+                "found": len(records) > 0
+            })
+        except dns.resolver.NXDOMAIN:
+            return jsonify({
+                "success": True,
+                "domain": validation_result,
+                "selector": selector,
+                "records": [],
+                "found": False
+            })
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "error": f"DNS resolution error: {str(e)}"
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"DKIM selector check error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/dkim/suggest-selectors', methods=['GET'])
+def suggest_dkim_selectors():
+    """Suggest common DKIM selectors for a domain"""
+    try:
+        domain = request.args.get('domain')
+        if not domain:
+            return jsonify({"error": "Domain parameter required"}), 400
+        
+        # Validate domain
+        is_valid, validation_result = validate_domain(domain)
+        if not is_valid:
+            return jsonify({"error": validation_result}), 400
+        
+        # Common DKIM selectors to try
+        common_selectors = ['default', 'google', 'selector1', 'selector2', 'k1', 'k2', 'mail']
+        suggestions = []
+        
+        for selector in common_selectors:
+            try:
+                dkim_records = dns.resolver.resolve(f"{selector}._domainkey.{validation_result}", 'TXT')
+                records = [record.to_text().strip('"') for record in dkim_records]
+                if records:
+                    suggestions.append({
+                        "selector": selector,
+                        "records": records
+                    })
+            except dns.resolver.NXDOMAIN:
+                continue
+            except Exception:
+                continue
+        
+        return jsonify({
+            "success": True,
+            "domain": validation_result,
+            "suggestions": suggestions,
+            "total_found": len(suggestions)
+        })
+        
+    except Exception as e:
+        logger.error(f"DKIM selector suggestions error: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/api/test-email', methods=['GET'])
+def test_email_config():
+    """Test email configuration"""
+    try:
+        if not EMAIL_PASSWORD:
+            return jsonify({
+                "success": False,
+                "error": "Email password not configured"
+            }), 400
+        
+        # Test SMTP connection
+        server = smtplib.SMTP(EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT)
+        server.starttls()
+        
+        # Try different authentication methods
+        try:
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            logger.info("Test: SMTP authentication successful with LOGIN")
+        except Exception as login_error:
+            logger.warning(f"Test: LOGIN authentication failed: {login_error}")
+            # Try PLAIN authentication as fallback
+            try:
+                server.ehlo()
+                server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+                logger.info("Test: SMTP authentication successful with PLAIN")
+            except Exception as plain_error:
+                logger.error(f"Test: PLAIN authentication also failed: {plain_error}")
+                raise plain_error
+        
+        server.quit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Email configuration is working",
+            "config": {
+                "smtp_server": EMAIL_SMTP_SERVER,
+                "smtp_port": EMAIL_SMTP_PORT,
+                "username": EMAIL_USERNAME,
+                "sender": EMAIL_SENDER,
+                "password_configured": bool(EMAIL_PASSWORD)
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Email configuration test failed: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "config": {
+                "smtp_server": EMAIL_SMTP_SERVER,
+                "smtp_port": EMAIL_SMTP_PORT,
+                "username": EMAIL_USERNAME,
+                "sender": EMAIL_SENDER,
+                "password_configured": bool(EMAIL_PASSWORD)
+            }
+        }), 500
+
 # Email report endpoint
 @app.route('/api/email-report', methods=['POST'])
 def email_report():
