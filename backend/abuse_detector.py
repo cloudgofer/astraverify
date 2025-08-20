@@ -3,47 +3,103 @@ from typing import Dict, List, Any
 import re
 from collections import defaultdict
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 class AbuseDetector:
     def __init__(self):
-        self.suspicious_patterns = {
-            'rapid_requests': {
-                'threshold': 50,  # requests per minute
-                'window': 60,     # seconds
-                'score': 10
-            },
-            'repeated_domains': {
-                'threshold': 20,  # same domain requests
-                'window': 3600,   # 1 hour
-                'score': 5
-            },
-            'error_spam': {
-                'threshold': 10,  # consecutive errors
-                'window': 300,    # 5 minutes
-                'score': 8
-            },
-            'suspicious_user_agents': {
-                'patterns': [
-                    r'bot|crawler|spider|scraper',
-                    r'python|curl|wget',
-                    r'^\s*$'  # Empty user agent
-                ],
-                'score': 3
-            },
-            'invalid_domains': {
-                'patterns': [
-                    r'^[0-9.]+$',  # IP addresses
-                    r'^[a-z0-9]{32}$',  # MD5 hashes
-                    r'^test\d+\.com$',  # Test domains
-                ],
-                'score': 5
+        # Get environment to adjust sensitivity
+        self.environment = os.environ.get('ENVIRONMENT', 'local')
+        
+        # Adjust thresholds based on environment
+        if self.environment == 'production':
+            # More lenient thresholds for production
+            self.suspicious_patterns = {
+                'rapid_requests': {
+                    'threshold': 200,  # Increased from 50
+                    'window': 60,     # seconds
+                    'score': 5        # Reduced from 10
+                },
+                'repeated_domains': {
+                    'threshold': 50,  # Increased from 20
+                    'window': 3600,   # 1 hour
+                    'score': 2        # Reduced from 5
+                },
+                'error_spam': {
+                    'threshold': 20,  # Increased from 10
+                    'window': 300,    # 5 minutes
+                    'score': 4        # Reduced from 8
+                },
+                'suspicious_user_agents': {
+                    'patterns': [
+                        r'bot|crawler|spider|scraper',
+                        # Removed python|curl|wget patterns for production
+                        r'^\s*$'  # Empty user agent
+                    ],
+                    'score': 1        # Reduced from 3
+                },
+                'invalid_domains': {
+                    'patterns': [
+                        r'^[0-9.]+$',  # IP addresses
+                        r'^[a-z0-9]{32}$',  # MD5 hashes
+                        r'^test\d+\.com$',  # Test domains
+                    ],
+                    'score': 2        # Reduced from 5
+                }
             }
-        }
+        else:
+            # Original thresholds for staging/local
+            self.suspicious_patterns = {
+                'rapid_requests': {
+                    'threshold': 50,  # requests per minute
+                    'window': 60,     # seconds
+                    'score': 10
+                },
+                'repeated_domains': {
+                    'threshold': 20,  # same domain requests
+                    'window': 3600,   # 1 hour
+                    'score': 5
+                },
+                'error_spam': {
+                    'threshold': 10,  # consecutive errors
+                    'window': 300,    # 5 minutes
+                    'score': 8
+                },
+                'suspicious_user_agents': {
+                    'patterns': [
+                        r'bot|crawler|spider|scraper',
+                        r'python|curl|wget',
+                        r'^\s*$'  # Empty user agent
+                    ],
+                    'score': 3
+                },
+                'invalid_domains': {
+                    'patterns': [
+                        r'^[0-9.]+$',  # IP addresses
+                        r'^[a-z0-9]{32}$',  # MD5 hashes
+                        r'^test\d+\.com$',  # Test domains
+                    ],
+                    'score': 5
+                }
+            }
         
         self.ip_scores = defaultdict(int)
         self.ip_history = defaultdict(list)
+    
+    def clear_all_blocks(self):
+        """Clear all IP scores and history - for production emergencies"""
+        self.ip_scores.clear()
+        self.ip_history.clear()
+        logger.warning("All abuse detection data cleared - production emergency")
+    
+    def reset_ip_score(self, ip: str):
+        """Reset score for a specific IP"""
+        if ip in self.ip_scores:
+            del self.ip_scores[ip]
+        if ip in self.ip_history:
+            del self.ip_history[ip]
+        logger.info(f"Reset abuse detection data for IP {ip}")
     
     def analyze_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze request for suspicious behavior"""

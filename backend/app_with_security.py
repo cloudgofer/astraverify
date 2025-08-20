@@ -473,12 +473,69 @@ def admin_security_dashboard():
 def admin_blocked_ips():
     """Get list of blocked IPs"""
     try:
-        # This would need to be implemented in IPBlocker
-        blocked_ips = []  # Placeholder
+        blocked_ips = ip_blocker.get_blocked_ips()
         return jsonify({"blocked_ips": blocked_ips})
     except Exception as e:
         logger.error(f"Blocked IPs error: {e}")
         return jsonify({"error": "Failed to get blocked IPs"}), 500
+
+@app.route('/api/admin/unblock-ip/<ip>', methods=['POST'])
+@require_admin_auth
+def admin_unblock_ip(ip):
+    """Admin endpoint to unblock an IP"""
+    try:
+        success = ip_blocker.unblock_ip(ip)
+        return jsonify({
+            'success': success,
+            'message': f"IP {ip} {'unblocked' if success else 'not found'}"
+        })
+    except Exception as e:
+        logger.error(f"Unblock IP error: {e}")
+        return jsonify({"error": "Failed to unblock IP"}), 500
+
+@app.route('/api/admin/clear-all-blocks', methods=['POST'])
+@require_admin_auth
+def admin_clear_all_blocks():
+    """Admin endpoint to clear all IP blocks and abuse detection data"""
+    try:
+        # Clear all IP blocks
+        blocked_ips = ip_blocker.get_blocked_ips()
+        for ip in blocked_ips.keys():
+            ip_blocker.unblock_ip(ip)
+        
+        # Clear abuse detection data
+        abuse_detector.clear_all_blocks()
+        
+        logger.warning("All IP blocks and abuse detection data cleared by admin")
+        return jsonify({
+            'success': True,
+            'message': 'All IP blocks and abuse detection data cleared',
+            'cleared_ips': len(blocked_ips)
+        })
+    except Exception as e:
+        logger.error(f"Clear all blocks error: {e}")
+        return jsonify({"error": "Failed to clear blocks"}), 500
+
+@app.route('/api/admin/reset-abuse-detection', methods=['POST'])
+@require_admin_auth
+def admin_reset_abuse_detection():
+    """Admin endpoint to reset abuse detection for a specific IP"""
+    try:
+        data = request.get_json()
+        ip = data.get('ip')
+        if not ip:
+            return jsonify({"error": "IP address required"}), 400
+        
+        abuse_detector.reset_ip_score(ip)
+        ip_blocker.unblock_ip(ip)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Abuse detection reset for IP {ip}'
+        })
+    except Exception as e:
+        logger.error(f"Reset abuse detection error: {e}")
+        return jsonify({"error": "Failed to reset abuse detection"}), 500
 
 # Helper functions for domain analysis
 def get_mx_details(domain):
