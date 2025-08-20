@@ -1,9 +1,9 @@
 # AstraVerify Admin Guide
 ## Enhanced Security Implementation & Management
 
-**Version:** 2.0  
+**Version:** 2.1  
 **Last Updated:** August 19, 2025  
-**Environment:** STAGE  
+**Environment:** PRODUCTION & STAGE  
 **Status:** Production Ready ✅
 
 ---
@@ -28,7 +28,17 @@
 AstraVerify STAGE environment has been enhanced with enterprise-grade security features including comprehensive input validation, rate limiting, security headers, and abuse prevention mechanisms.
 
 ### **Current Environment Status**
-- **Service URL**: `https://astraverify-backend-staging-1098627686587.us-central1.run.app`
+
+#### **Production Environment**
+- **Backend URL**: `https://astraverify-backend-ml2mhibdvq-uc.a.run.app`
+- **Frontend URL**: `https://astraverify-frontend-ml2mhibdvq-uc.a.run.app`
+- **Environment**: Production
+- **Security Level**: Enhanced (Enterprise Grade) - Production Optimized
+- **Last Deployment**: August 19, 2025
+- **Status**: ✅ Fully Operational
+
+#### **Staging Environment**
+- **Backend URL**: `https://astraverify-backend-staging-1098627686587.us-central1.run.app`
 - **Frontend URL**: `https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app`
 - **Environment**: Staging
 - **Security Level**: Enhanced (Enterprise Grade)
@@ -60,6 +70,23 @@ Tier-based rate limiting with Redis backend:
 | Authenticated | 30 | 500 | 5,000 |
 | Premium | 100 | 2,000 | 20,000 |
 
+### **3. Production-Optimized Abuse Detection**
+Environment-based thresholds for optimal performance:
+
+#### **Production Environment**
+- **Rapid Requests**: 200 requests/minute (vs 50 in staging)
+- **Repeated Domains**: 50 requests/hour (vs 20 in staging)
+- **Error Spam**: 20 errors/5min (vs 10 in staging)
+- **User Agent Patterns**: Excludes python/curl/wget patterns
+- **Penalty Scores**: Reduced for production environment
+
+#### **Staging Environment**
+- **Rapid Requests**: 50 requests/minute
+- **Repeated Domains**: 20 requests/hour
+- **Error Spam**: 10 errors/5min
+- **User Agent Patterns**: Includes all suspicious patterns
+- **Penalty Scores**: Standard security levels
+
 **Rate Limit Headers:**
 ```http
 X-RateLimit-Limit: 10
@@ -67,7 +94,7 @@ X-RateLimit-Remaining: 9
 X-RateLimit-Reset: 1755624336
 ```
 
-### **3. Input Validation**
+### **4. Input Validation**
 Comprehensive validation that rejects:
 
 - **IP Addresses**: `192.168.1.1` → 400 Error
@@ -76,13 +103,15 @@ Comprehensive validation that rejects:
 - **HTML Injection**: `<iframe src="...">` → 400 Error
 - **Invalid Formats**: Empty domains, malformed domains → 400 Error
 
-### **4. Abuse Prevention**
+### **5. Abuse Prevention**
 - **IP Blocking**: Automatic blocking of suspicious IPs
 - **Request Fingerprinting**: Unique request identification
 - **Suspicious Behavior Detection**: Bot detection, rapid requests
 - **User Agent Validation**: Empty/suspicious user agents flagged
+- **Environment-Based Thresholds**: Production-optimized settings
+- **Admin Block Management**: Emergency clearing and individual IP management
 
-### **5. Admin Authentication**
+### **6. Admin Authentication**
 - **API Key**: `astraverify-admin-2024`
 - **Header**: `X-Admin-API-Key: astraverify-admin-2024`
 - **Endpoints**: All admin endpoints require authentication
@@ -226,6 +255,45 @@ Headers: X-Admin-API-Key: astraverify-admin-2024
 POST /api/admin/unblock-ip/<ip_address>
 Headers: X-Admin-API-Key: astraverify-admin-2024
 ```
+**Response:**
+```json
+{
+  "success": true,
+  "message": "IP 192.168.1.100 unblocked"
+}
+```
+
+#### **Clear All Blocks (Emergency)**
+```http
+POST /api/admin/clear-all-blocks
+Headers: X-Admin-API-Key: astraverify-admin-2024
+```
+**Response:**
+```json
+{
+  "success": true,
+  "message": "All IP blocks and abuse detection data cleared",
+  "cleared_ips": 5
+}
+```
+
+#### **Reset Abuse Detection for Specific IP**
+```http
+POST /api/admin/reset-abuse-detection
+Headers: X-Admin-API-Key: astraverify-admin-2024
+Content-Type: application/json
+
+{
+  "ip": "192.168.1.100"
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Abuse detection reset for IP 192.168.1.100"
+}
+```
 
 #### **IP Analytics**
 ```http
@@ -365,6 +433,40 @@ node test_mobile_responsiveness.js
 - **Rate Limit Hits**: Monitor rate limiting effectiveness
 - **Error Rates**: Watch for security-related errors
 
+### **Block Management Procedures**
+
+#### **Daily Block Management**
+```bash
+# Check currently blocked IPs
+curl -H "X-Admin-API-Key: astraverify-admin-2024" \
+  "https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/admin/blocked-ips"
+
+# Review blocked IP analytics
+curl -H "X-Admin-API-Key: astraverify-admin-2024" \
+  "https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/admin/ip-analytics/192.168.1.100"
+```
+
+#### **Emergency Block Clearing**
+```bash
+# Clear all blocks (use only in emergencies)
+curl -X POST "https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/admin/clear-all-blocks" \
+  -H "X-Admin-API-Key: astraverify-admin-2024" \
+  -H "Content-Type: application/json"
+
+# Reset abuse detection for specific IP
+curl -X POST "https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/admin/reset-abuse-detection" \
+  -H "X-Admin-API-Key: astraverify-admin-2024" \
+  -H "Content-Type: application/json" \
+  -d '{"ip": "192.168.1.100"}'
+```
+
+#### **Block Management Best Practices**
+1. **Regular Review**: Check blocked IPs daily
+2. **Legitimate IPs**: Unblock legitimate users immediately
+3. **Pattern Analysis**: Look for patterns in blocked IPs
+4. **Threshold Adjustment**: Adjust abuse detection thresholds if needed
+5. **Documentation**: Keep records of all block management actions
+
 ---
 
 ## 🚨 Emergency Procedures
@@ -381,6 +483,21 @@ node test_mobile_responsiveness.js
 3. Check logs for unauthorized access attempts
 4. Update admin API key if compromised
 5. Notify security team
+
+### **Production Environment Blocked**
+1. **Immediate Action**: Clear all blocks using emergency endpoint
+   ```bash
+   curl -X POST "https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/admin/clear-all-blocks" \
+     -H "X-Admin-API-Key: astraverify-admin-2024" \
+     -H "Content-Type: application/json"
+   ```
+2. **Verify Resolution**: Check health endpoint
+   ```bash
+   curl "https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/health"
+   ```
+3. **Monitor**: Watch for legitimate traffic patterns
+4. **Adjust Settings**: If needed, modify abuse detection thresholds
+5. **Document**: Record the incident and resolution steps
 
 ### **Performance Issues**
 1. Check rate limiting configuration
@@ -417,7 +534,12 @@ node test_mobile_responsiveness.js
 
 ## 📝 Change Log
 
-### **Version 2.0 (August 19, 2025)**
+### **Version 2.1 (August 19, 2025)**
+- ✅ **NEW**: Admin block management endpoints added
+- ✅ **NEW**: Emergency block clearing functionality
+- ✅ **NEW**: Individual IP abuse detection reset
+- ✅ **NEW**: Production-optimized abuse detection thresholds
+- ✅ **NEW**: Environment-based security configuration
 - ✅ Enhanced security features implemented
 - ✅ Security headers added (OWASP compliant)
 - ✅ Rate limiting with Redis backend
@@ -428,6 +550,18 @@ node test_mobile_responsiveness.js
 - ✅ Fixed recommendation engine method signatures
 - ✅ Updated Dockerfile for enhanced security
 - ✅ Comprehensive testing suite implemented
+
+### **Version 2.0 (August 19, 2025)**
+- Enhanced security features implemented
+- Security headers added (OWASP compliant)
+- Rate limiting with Redis backend
+- Comprehensive input validation
+- Admin authentication system
+- Abuse prevention mechanisms
+- Fixed scoring engine null value handling
+- Fixed recommendation engine method signatures
+- Updated Dockerfile for enhanced security
+- Comprehensive testing suite implemented
 
 ### **Version 1.0 (Previous)**
 - Basic security implementation
@@ -460,7 +594,7 @@ node test_mobile_responsiveness.js
 
 ---
 
-**Document Version:** 2.0  
+**Document Version:** 2.1  
 **Last Updated:** August 19, 2025  
 **Next Review:** September 19, 2025  
 **Maintained By:** AstraVerify Admin Team
