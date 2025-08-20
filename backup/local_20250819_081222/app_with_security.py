@@ -7,7 +7,6 @@ import re
 import os
 import smtplib
 import time
-import redis
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -49,40 +48,10 @@ recommendation_engine = RecommendationEngine(config_loader)
 
 # Environment configuration
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'local')
-logger.info(f"Starting AstraVerify backend with ENHANCED security in {ENVIRONMENT} environment")
+logger.info(f"Starting AstraVerify backend with security in {ENVIRONMENT} environment")
 
 # Admin authentication
 ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY', 'astraverify-admin-2024')
-
-# Rate limiting configuration
-RATE_LIMIT_CONFIG = {
-    'free': {
-        'requests_per_minute': 10,
-        'requests_per_hour': 100,
-        'requests_per_day': 1000
-    },
-    'authenticated': {
-        'requests_per_minute': 30,
-        'requests_per_hour': 500,
-        'requests_per_day': 5000
-    },
-    'premium': {
-        'requests_per_minute': 100,
-        'requests_per_hour': 2000,
-        'requests_per_day': 20000
-    }
-}
-
-# Initialize Redis for rate limiting
-redis_client = None
-try:
-    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
-    redis_client = redis.from_url(redis_url, decode_responses=True)
-    redis_client.ping()
-    logger.info("Connected to Redis for enhanced rate limiting")
-except Exception as e:
-    logger.warning(f"Redis not available, using in-memory rate limiting: {e}")
-    redis_client = None
 
 # Email configuration
 EMAIL_SENDER = 'hi@astraverify.com'
@@ -135,109 +104,6 @@ def get_email_password():
 EMAIL_PASSWORD = get_email_password()
 logger.info(f"Email password configured: {bool(EMAIL_PASSWORD)}")
 
-# Enhanced input validation
-def validate_domain(domain):
-    """Enhanced domain validation with security checks"""
-    if not domain or not isinstance(domain, str):
-        return False, "Domain parameter is required and must be a string"
-    
-    # Remove protocol and www if present
-    domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
-    
-    # Check for empty domain after cleaning
-    if not domain or domain.strip() == '':
-        return False, "Domain cannot be empty"
-    
-    # Check for IP addresses (reject them)
-    ip_pattern = r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-    if re.match(ip_pattern, domain):
-        return False, "IP addresses are not valid domains"
-    
-    # Check for malicious patterns
-    malicious_patterns = [
-        r'<script',  # XSS attempts
-        r'javascript:',  # JavaScript injection
-        r'data:',  # Data URI injection
-        r'vbscript:',  # VBScript injection
-        r'<iframe',  # Iframe injection
-        r'<object',  # Object injection
-        r'<embed',  # Embed injection
-        r'<form',  # Form injection
-        r'<input',  # Input injection
-        r'<textarea',  # Textarea injection
-        r'<select',  # Select injection
-        r'<button',  # Button injection
-        r'<link',  # Link injection
-        r'<meta',  # Meta injection
-        r'<style',  # Style injection
-        r'<title',  # Title injection
-        r'<body',  # Body injection
-        r'<head',  # Head injection
-        r'<html',  # HTML injection
-        r'<xml',  # XML injection
-        r'<svg',  # SVG injection
-        r'<math',  # MathML injection
-        r'<applet',  # Applet injection
-        r'<base',  # Base injection
-        r'<bgsound',  # BGSound injection
-        r'<link',  # Link injection
-        r'<meta',  # Meta injection
-        r'<script',  # Script injection
-        r'<title',  # Title injection
-        r'<xmp',  # XMP injection
-    ]
-    
-    for pattern in malicious_patterns:
-        if re.search(pattern, domain, re.IGNORECASE):
-            return False, f"Domain contains malicious pattern: {pattern}"
-    
-    # Check for SQL injection patterns
-    sql_patterns = [
-        r"';",  # SQL injection
-        r"--",  # SQL comment
-        r"/\*",  # SQL comment (escaped)
-        r"\*/",  # SQL comment (escaped)
-        r"\bxp_",  # SQL extended procedure (word boundary)
-        r"\bsp_",  # SQL stored procedure (word boundary)
-        r"@@",  # SQL variable
-        r"\bchar\(",  # SQL function (word boundary)
-        r"\bnchar\(",  # SQL function (word boundary)
-        r"\bvarchar\(",  # SQL function (word boundary)
-        r"\bnvarchar\(",  # SQL function (word boundary)
-        r"\bcast\(",  # SQL function (word boundary)
-        r"\bconvert\(",  # SQL function (word boundary)
-        r"\bexec\b",  # SQL execution (word boundary)
-        r"\bexecute\b",  # SQL execution (word boundary)
-        r"\bunion\b",  # SQL union (word boundary)
-        r"\bselect\b",  # SQL select (word boundary)
-        r"\binsert\b",  # SQL insert (word boundary)
-        r"\bupdate\b",  # SQL update (word boundary)
-        r"\bdelete\b",  # SQL delete (word boundary)
-        r"\bdrop\b",  # SQL drop (word boundary)
-        r"\bcreate\b",  # SQL create (word boundary)
-        r"\balter\b",  # SQL alter (word boundary)
-        r"\btruncate\b",  # SQL truncate (word boundary)
-        r"\bbackup\b",  # SQL backup (word boundary)
-        r"\brestore\b",  # SQL restore (word boundary)
-        r"\bshutdown\b",  # SQL shutdown (word boundary)
-        r"\bkill\b",  # SQL kill (word boundary)
-    ]
-    
-    for pattern in sql_patterns:
-        if re.search(pattern, domain, re.IGNORECASE):
-            return False, f"Domain contains SQL injection pattern: {pattern}"
-    
-    # Check domain length
-    if len(domain) > 253:  # RFC 1035 limit
-        return False, "Domain is too long (maximum 253 characters)"
-    
-    # Check for valid domain format
-    domain_pattern = r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
-    if not re.match(domain_pattern, domain):
-        return False, "Invalid domain format"
-    
-    return True, domain
-
 def require_admin_auth(f):
     """Decorator to require admin authentication"""
     def decorated_function(*args, **kwargs):
@@ -248,109 +114,7 @@ def require_admin_auth(f):
     decorated_function.__name__ = f.__name__
     return decorated_function
 
-# Enhanced rate limiting with Redis
-class EnhancedRateLimiter:
-    def __init__(self):
-        self.redis_client = redis_client
-        self.limits = RATE_LIMIT_CONFIG
-    
-    def get_user_tier(self, api_key=None, ip=None):
-        """Determine user tier based on API key or IP reputation"""
-        if api_key and self._is_valid_api_key(api_key):
-            return 'authenticated'
-        elif self._is_premium_ip(ip):
-            return 'premium'
-        return 'free'
-    
-    def _is_valid_api_key(self, api_key):
-        """Check if API key is valid"""
-        valid_keys = os.environ.get('VALID_API_KEYS', '').split(',')
-        return api_key in valid_keys
-    
-    def _is_premium_ip(self, ip):
-        """Check if IP is premium (trusted)"""
-        premium_ips = os.environ.get('PREMIUM_IPS', '').split(',')
-        return ip in premium_ips
-    
-    def check_rate_limit(self, identifier, tier='free'):
-        """Check if request is within rate limits"""
-        if self.redis_client:
-            return self._check_rate_limit_redis(identifier, tier)
-        else:
-            return self._check_rate_limit_memory(identifier, tier)
-    
-    def _check_rate_limit_redis(self, identifier, tier):
-        """Check rate limits using Redis"""
-        try:
-            limits = self.limits[tier]
-            now = datetime.utcnow()
-            
-            # Create keys for different time windows
-            minute_key = f"rate_limit:{identifier}:{now.strftime('%Y%m%d%H%M')}"
-            hour_key = f"rate_limit:{identifier}:{now.strftime('%Y%m%d%H')}"
-            day_key = f"rate_limit:{identifier}:{now.strftime('%Y%m%d')}"
-            
-            # Get current counts
-            minute_count = int(self.redis_client.get(minute_key) or 0)
-            hour_count = int(self.redis_client.get(hour_key) or 0)
-            day_count = int(self.redis_client.get(day_key) or 0)
-            
-            # Check if any limit is exceeded
-            if (minute_count >= limits['requests_per_minute'] or
-                hour_count >= limits['requests_per_hour'] or
-                day_count >= limits['requests_per_day']):
-                
-                return False, {
-                    'retry_after': 60,
-                    'limits': limits,
-                    'current_usage': {
-                        'minute': minute_count,
-                        'hour': hour_count,
-                        'day': day_count
-                    }
-                }
-            
-            # Increment counters
-            pipe = self.redis_client.pipeline()
-            pipe.incr(minute_key)
-            pipe.incr(hour_key)
-            pipe.incr(day_key)
-            pipe.expire(minute_key, 60)
-            pipe.expire(hour_key, 3600)
-            pipe.expire(day_key, 86400)
-            pipe.execute()
-            
-            return True, {
-                'retry_after': 0,
-                'limits': limits,
-                'current_usage': {
-                    'minute': minute_count + 1,
-                    'hour': hour_count + 1,
-                    'day': day_count + 1
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Redis rate limiting error: {e}")
-            return True, {
-                'retry_after': 0,
-                'limits': self.limits.get(tier, self.limits['free']),
-                'current_usage': {'minute': 0, 'hour': 0, 'day': 0}
-            }
-    
-    def _check_rate_limit_memory(self, identifier, tier):
-        """Fallback to in-memory rate limiting"""
-        # Simple in-memory implementation
-        return True, {
-            'retry_after': 0,
-            'limits': self.limits.get(tier, self.limits['free']),
-            'current_usage': {'minute': 0, 'hour': 0, 'day': 0}
-        }
-
-# Initialize enhanced rate limiter
-enhanced_rate_limiter = EnhancedRateLimiter()
-
-# Security middleware with enhanced features
+# Security middleware
 @app.before_request
 def before_request():
     """Enhanced request processing with security checks"""
@@ -373,10 +137,10 @@ def before_request():
             "blocked_until": block_info['blocked_until'].isoformat() if block_info['blocked_until'] else None
         }), 403
     
-    # Enhanced rate limiting
+    # Check rate limiting
     api_key = request.headers.get('X-API-Key')
-    user_tier = enhanced_rate_limiter.get_user_tier(api_key, client_ip)
-    allowed, rate_limit_info = enhanced_rate_limiter.check_rate_limit(client_ip, user_tier)
+    user_tier = rate_limiter.get_user_tier(api_key, client_ip)
+    allowed, rate_limit_info = rate_limiter.check_rate_limit(client_ip, user_tier)
     
     if not allowed:
         g.response_status = 429
@@ -408,18 +172,9 @@ def before_request():
 
 @app.after_request
 def after_request(response):
-    """Enhanced response processing with security headers and rate limit headers"""
+    """Log response and add rate limit headers"""
     g.response_time = (time.time() - g.start_time) * 1000
     g.response_status = response.status_code
-    
-    # Add security headers
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self' https:; frame-ancestors 'none';"
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
     
     # Add rate limit headers
     if hasattr(g, 'rate_limit_info'):
@@ -442,45 +197,9 @@ def health_check():
         "status": "healthy",
         "environment": ENVIRONMENT,
         "timestamp": datetime.utcnow().isoformat(),
-        "security_enabled": True,
-        "enhanced_security": True,
-        "rate_limiting": "enabled",
-        "input_validation": "enhanced"
+        "security_enabled": True
     })
 
-# Admin endpoints
-@app.route('/api/admin/security-dashboard', methods=['GET'])
-@require_admin_auth
-def admin_security_dashboard():
-    """Admin security dashboard endpoint"""
-    try:
-        # Get security statistics
-        stats = {
-            "total_requests": firestore_manager.get_daily_request_count(),
-            "rate_limited_requests": firestore_manager.get_rate_limited_count(),
-            "top_requesting_ips": firestore_manager.get_top_requesting_ips(10),
-            "environment": ENVIRONMENT,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        
-        return jsonify(stats)
-    except Exception as e:
-        logger.error(f"Admin dashboard error: {e}")
-        return jsonify({"error": "Failed to get security statistics"}), 500
-
-@app.route('/api/admin/blocked-ips', methods=['GET'])
-@require_admin_auth
-def admin_blocked_ips():
-    """Get list of blocked IPs"""
-    try:
-        # This would need to be implemented in IPBlocker
-        blocked_ips = []  # Placeholder
-        return jsonify({"blocked_ips": blocked_ips})
-    except Exception as e:
-        logger.error(f"Blocked IPs error: {e}")
-        return jsonify({"error": "Failed to get blocked IPs"}), 500
-
-# Helper functions for domain analysis
 def get_mx_details(domain):
     """Get detailed MX record information"""
     try:
@@ -650,19 +369,150 @@ def detect_email_provider(mx_result, spf_result, dkim_result):
     
     return provider
 
-# Main domain checking endpoint with enhanced validation
+def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
+    """
+    Calculate comprehensive security score with bonus points.
+    
+    Base Scoring (100 points total):
+    - MX Records: 25 points (essential for email delivery)
+    - SPF Records: 25 points (prevents email spoofing)
+    - DMARC Records: 30 points (authentication reporting)
+    - DKIM Records: 20 points (email authentication)
+    
+    Bonus Points (up to 10 additional points):
+    - Multiple MX records: +2 points (redundancy)
+    - Strong SPF policy: +1-2 points (-all > ~all > ?all)
+    - Strict DMARC policy: +1-2 points (p=reject > p=quarantine)
+    - Multiple DKIM selectors: +2 points (diversity) - only for non-Google providers
+    - 100% DMARC coverage: +1 point (pct=100)
+    """
+    score = 0
+    max_score = 100
+    bonus_points = 0
+    max_bonus = 10
+    scoring_details = {}
+    
+    # Base scoring (MX: 25, SPF: 25, DMARC: 30, DKIM: 20)
+    if mx_result['has_mx']:
+        # Check if MX records are actually functional
+        functional_mx = False
+        for record in mx_result['records']:
+            server = record.get('server', '')
+            # Skip non-functional servers like "." or empty strings
+            if server and server != '.' and server != '':
+                functional_mx = True
+                break
+        
+        if functional_mx:
+            score += 25
+            scoring_details['mx_base'] = 25
+            # Bonus for multiple MX records (redundancy)
+            if len(mx_result['records']) > 1:
+                bonus_points += 2
+                scoring_details['mx_bonus'] = 2
+            else:
+                scoring_details['mx_bonus'] = 0
+        else:
+            # MX records exist but are not functional
+            scoring_details['mx_base'] = 0
+            scoring_details['mx_bonus'] = 0
+    else:
+        scoring_details['mx_base'] = 0
+        scoring_details['mx_bonus'] = 0
+    
+    if spf_result['has_spf']:
+        score += 25
+        scoring_details['spf_base'] = 25
+        # Bonus for strong SPF policy
+        spf_bonus = 0
+        for record in spf_result['records']:
+            if '-all' in record['record']:
+                spf_bonus += 2  # Strongest policy
+            elif '~all' in record['record']:
+                spf_bonus += 1  # Medium policy
+            elif '?all' in record['record']:
+                spf_bonus += 0.5  # Weakest policy
+        bonus_points += spf_bonus
+        scoring_details['spf_bonus'] = spf_bonus
+    else:
+        scoring_details['spf_base'] = 0
+        scoring_details['spf_bonus'] = 0
+    
+    if dmarc_result['has_dmarc']:
+        score += 30
+        scoring_details['dmarc_base'] = 30
+        # Bonus for strong DMARC policy
+        dmarc_bonus = 0
+        for record in dmarc_result['records']:
+            if 'p=reject' in record['record']:
+                dmarc_bonus += 2  # Strictest policy
+            elif 'p=quarantine' in record['record']:
+                dmarc_bonus += 1  # Medium policy
+            if 'pct=100' in record['record']:
+                dmarc_bonus += 1  # 100% coverage
+        bonus_points += dmarc_bonus
+        scoring_details['dmarc_bonus'] = dmarc_bonus
+    else:
+        scoring_details['dmarc_base'] = 0
+        scoring_details['dmarc_bonus'] = 0
+    
+    if dkim_result['has_dkim']:
+        score += 20
+        scoring_details['dkim_base'] = 20
+        # Bonus for multiple DKIM selectors (only for non-Google providers)
+        provider = detect_email_provider(mx_result, spf_result, dkim_result)
+        if len(dkim_result['records']) > 1 and provider != "Google Workspace":
+            bonus_points += 2
+            scoring_details['dkim_bonus'] = 2
+        else:
+            scoring_details['dkim_bonus'] = 0
+    else:
+        scoring_details['dkim_base'] = 0
+        scoring_details['dkim_bonus'] = 0
+    
+    # Apply bonus points (capped at max_bonus)
+    final_score = min(score + bonus_points, max_score)
+    
+    # Determine grade and status
+    if final_score >= 90:
+        grade = 'A'
+        status = 'Excellent'
+    elif final_score >= 75:
+        grade = 'B'
+        status = 'Good'
+    elif final_score >= 50:
+        grade = 'C'
+        status = 'Fair'
+    elif final_score >= 25:
+        grade = 'D'
+        status = 'Poor'
+    else:
+        grade = 'F'
+        status = 'Very Poor'
+    
+    return {
+        'score': round(final_score, 1),
+        'grade': grade,
+        'status': status,
+        'max_score': max_score,
+        'base_score': score,
+        'bonus_points': round(bonus_points, 1),
+        'max_bonus': max_bonus,
+        'scoring_details': scoring_details
+    }
+
+# Main domain checking endpoint
 @app.route('/api/check', methods=['GET'])
 def check_domain():
-    """Main domain checking endpoint with enhanced security"""
+    """Main domain checking endpoint with security"""
     domain = request.args.get('domain')
     progressive = request.args.get('progressive', 'false').lower() == 'true'
     
-    # Enhanced input validation
-    is_valid, validation_result = validate_domain(domain)
-    if not is_valid:
-        return jsonify({"error": validation_result}), 400
+    if not domain:
+        return jsonify({"error": "Domain parameter is required"}), 400
     
-    domain = validation_result  # Clean domain
+    # Remove protocol if present
+    domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
     
     logger.info(f"Starting comprehensive analysis for domain: {domain}")
     
@@ -687,13 +537,7 @@ def check_domain():
         total_score = scoring_engine.calculate_total_score(component_scores)
         
         # Generate recommendations
-        early_parsed_data = {
-            'mx': mx_result,
-            'spf': spf_result,
-            'dmarc': dmarc_result,
-            'dkim': {'has_dkim': False, 'records': []}
-        }
-        recommendations = recommendation_engine.generate_recommendations(component_scores, early_parsed_data)
+        recommendations = recommendation_engine.generate_recommendations(component_scores, mx_result, spf_result, dmarc_result, {'has_dkim': False, 'records': []})
         
         early_results = {
             "domain": domain,
@@ -749,13 +593,7 @@ def check_domain():
     security_score = scoring_engine.calculate_total_score(component_scores)
     
     # Generate recommendations
-    parsed_data = {
-        'mx': mx_result,
-        'spf': spf_result,
-        'dmarc': dmarc_result,
-        'dkim': dkim_result
-    }
-    recommendations = recommendation_engine.generate_recommendations(component_scores, parsed_data)
+    recommendations = recommendation_engine.generate_recommendations(component_scores, mx_result, spf_result, dmarc_result, dkim_result)
     
     # Compile comprehensive results
     results = {
@@ -794,48 +632,79 @@ def check_domain():
     
     return jsonify(results)
 
-# Email report endpoint
-@app.route('/api/email-report', methods=['POST'])
-def email_report():
-    """Email report endpoint with enhanced validation"""
-    try:
-        data = request.get_json()
-        
-        # Validate required fields
-        required_fields = ['email', 'domain', 'analysis_result']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"Missing required field: {field}"}), 400
-        
-        # Validate email format
-        email = data['email']
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-        if not re.match(email_pattern, email):
-            return jsonify({"error": "Invalid email format"}), 400
-        
-        # Validate domain
-        domain = data['domain']
-        is_valid, validation_result = validate_domain(domain)
-        if not is_valid:
-            return jsonify({"error": validation_result}), 400
-        
-        # Store email report
-        timestamp = datetime.utcnow()
-        opt_in_marketing = data.get('opt_in_marketing', False)
-        
-        success = firestore_manager.store_email_report(
-            email, domain, data['analysis_result'], opt_in_marketing, timestamp
-        )
-        
-        if success:
-            return jsonify({"message": "Email report stored successfully"}), 200
-        else:
-            return jsonify({"error": "Failed to store email report"}), 500
-            
-    except Exception as e:
-        logger.error(f"Email report error: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+# Admin endpoints for security management
+@app.route('/api/admin/blocked-ips', methods=['GET'])
+@require_admin_auth
+def get_blocked_ips():
+    """Admin endpoint to view blocked IPs"""
+    return jsonify({
+        'blocked_ips': ip_blocker.get_blocked_ips(),
+        'total_blocked': len(ip_blocker.get_blocked_ips()),
+        'statistics': ip_blocker.get_block_statistics()
+    })
+
+@app.route('/api/admin/unblock-ip/<ip>', methods=['POST'])
+@require_admin_auth
+def unblock_ip(ip):
+    """Admin endpoint to unblock an IP"""
+    success = ip_blocker.unblock_ip(ip)
+    return jsonify({
+        'success': success,
+        'message': f"IP {ip} {'unblocked' if success else 'not found'}"
+    })
+
+@app.route('/api/admin/block-ip/<ip>', methods=['POST'])
+@require_admin_auth
+def block_ip(ip):
+    """Admin endpoint to block an IP"""
+    data = request.get_json() or {}
+    reason = data.get('reason', 'Manual block')
+    level = data.get('level', 'temporary')
+    
+    success = ip_blocker.block_ip(ip, reason, level)
+    return jsonify({
+        'success': success,
+        'message': f"IP {ip} {'blocked' if success else 'failed to block'}"
+    })
+
+@app.route('/api/admin/ip-analytics/<ip>', methods=['GET'])
+@require_admin_auth
+def get_ip_analytics(ip):
+    """Admin endpoint to get IP analytics"""
+    hours = request.args.get('hours', 24, type=int)
+    analytics = firestore_manager.get_ip_analytics(ip, hours)
+    abuse_score = abuse_detector.ip_scores.get(ip, 0)
+    
+    return jsonify({
+        'ip': ip,
+        'analytics': analytics,
+        'abuse_score': abuse_score,
+        'risk_level': abuse_detector._get_risk_level(abuse_score),
+        'is_blocked': bool(ip_blocker.is_blocked(ip)),
+        'block_info': ip_blocker.get_block_info(ip)
+    })
+
+@app.route('/api/admin/security-dashboard', methods=['GET'])
+@require_admin_auth
+def security_dashboard():
+    """Admin dashboard for security monitoring"""
+    return jsonify({
+        'rate_limiting': {
+            'total_requests_today': firestore_manager.get_daily_request_count(),
+            'rate_limited_requests': firestore_manager.get_rate_limited_count(),
+            'top_ips': firestore_manager.get_top_requesting_ips()
+        },
+        'abuse_detection': {
+            'blocked_ips_count': len(ip_blocker.get_blocked_ips()),
+            'high_risk_ips': len([ip for ip, score in abuse_detector.ip_scores.items() if score >= 30]),
+            'block_statistics': ip_blocker.get_block_statistics()
+        },
+        'system_health': {
+            'environment': ENVIRONMENT,
+            'security_enabled': True,
+            'redis_available': rate_limiter.redis_client is not None
+        }
+    })
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=8080)

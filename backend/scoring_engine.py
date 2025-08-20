@@ -220,6 +220,8 @@ class ScoringEngine:
         
         # Coverage score
         percentage = dmarc_analysis.get('percentage', 0)
+        if percentage is None:
+            percentage = 0
         if percentage == 100:
             points = self.config.get_rule_points('dmarc', 'coverage', 'dmarc_percentage == 100')
         elif percentage >= 50:

@@ -1,23 +1,32 @@
 {
-  "name": "astraverify-ui-tests",
+  "name": "astraverify-stage-tests",
   "version": "1.0.0",
-  "description": "UI Tests for AstraVerify Application",
-  "main": "ui_test.js",
+  "description": "Comprehensive test suite for AstraVerify STAGE environment",
+  "main": "test_stage_environment.js",
   "scripts": {
-    "test": "node ui_test.js",
-    "test:headless": "node -e \"require('./ui_test.js').runUITests({headless: true})\"",
-    "test:mobile": "node -e \"require('./ui_test.js').runMobileTests()\"",
-    "test:desktop": "node -e \"require('./ui_test.js').runDesktopTests()\""
-  },
-  "dependencies": {
-    "puppeteer": "^21.11.0"
+    "test": "node test_stage_environment.js",
+    "test:security": "node test_security_features.js",
+    "test:mobile": "node test_mobile_responsiveness.js",
+    "test:all": "./run_stage_tests.sh",
+    "test:quick": "node test_stage_environment.js --quick"
   },
   "keywords": [
-    "ui-testing",
-    "puppeteer",
-    "responsive-design",
-    "astraverify"
+    "testing",
+    "security",
+    "rate-limiting",
+    "mobile-responsiveness",
+    "staging"
   ],
   "author": "AstraVerify Team",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^21.0.0",
+    "node-fetch": "^3.3.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
 }

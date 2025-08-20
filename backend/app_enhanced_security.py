@@ -195,32 +195,32 @@ def validate_domain(domain):
     sql_patterns = [
         r"';",  # SQL injection
         r"--",  # SQL comment
-        r"/\*",  # SQL comment (escaped)
-        r"\*/",  # SQL comment (escaped)
-        r"\bxp_",  # SQL extended procedure (word boundary)
-        r"\bsp_",  # SQL stored procedure (word boundary)
+        r"/*",  # SQL comment
+        r"*/",  # SQL comment
+        r"xp_",  # SQL extended procedure
+        r"sp_",  # SQL stored procedure
         r"@@",  # SQL variable
-        r"\bchar\(",  # SQL function (word boundary)
-        r"\bnchar\(",  # SQL function (word boundary)
-        r"\bvarchar\(",  # SQL function (word boundary)
-        r"\bnvarchar\(",  # SQL function (word boundary)
-        r"\bcast\(",  # SQL function (word boundary)
-        r"\bconvert\(",  # SQL function (word boundary)
-        r"\bexec\b",  # SQL execution (word boundary)
-        r"\bexecute\b",  # SQL execution (word boundary)
-        r"\bunion\b",  # SQL union (word boundary)
-        r"\bselect\b",  # SQL select (word boundary)
-        r"\binsert\b",  # SQL insert (word boundary)
-        r"\bupdate\b",  # SQL update (word boundary)
-        r"\bdelete\b",  # SQL delete (word boundary)
-        r"\bdrop\b",  # SQL drop (word boundary)
-        r"\bcreate\b",  # SQL create (word boundary)
-        r"\balter\b",  # SQL alter (word boundary)
-        r"\btruncate\b",  # SQL truncate (word boundary)
-        r"\bbackup\b",  # SQL backup (word boundary)
-        r"\brestore\b",  # SQL restore (word boundary)
-        r"\bshutdown\b",  # SQL shutdown (word boundary)
-        r"\bkill\b",  # SQL kill (word boundary)
+        r"char(",  # SQL function
+        r"nchar(",  # SQL function
+        r"varchar(",  # SQL function
+        r"nvarchar(",  # SQL function
+        r"cast(",  # SQL function
+        r"convert(",  # SQL function
+        r"exec",  # SQL execution
+        r"execute",  # SQL execution
+        r"union",  # SQL union
+        r"select",  # SQL select
+        r"insert",  # SQL insert
+        r"update",  # SQL update
+        r"delete",  # SQL delete
+        r"drop",  # SQL drop
+        r"create",  # SQL create
+        r"alter",  # SQL alter
+        r"truncate",  # SQL truncate
+        r"backup",  # SQL backup
+        r"restore",  # SQL restore
+        r"shutdown",  # SQL shutdown
+        r"kill",  # SQL kill
     ]
     
     for pattern in sql_patterns:
@@ -334,7 +334,7 @@ class EnhancedRateLimiter:
             logger.error(f"Redis rate limiting error: {e}")
             return True, {
                 'retry_after': 0,
-                'limits': self.limits.get(tier, self.limits['free']),
+                'limits': limits,
                 'current_usage': {'minute': 0, 'hour': 0, 'day': 0}
             }
     
@@ -343,7 +343,7 @@ class EnhancedRateLimiter:
         # Simple in-memory implementation
         return True, {
             'retry_after': 0,
-            'limits': self.limits.get(tier, self.limits['free']),
+            'limits': self.limits[tier],
             'current_usage': {'minute': 0, 'hour': 0, 'day': 0}
         }
 
@@ -687,13 +687,7 @@ def check_domain():
         total_score = scoring_engine.calculate_total_score(component_scores)
         
         # Generate recommendations
-        early_parsed_data = {
-            'mx': mx_result,
-            'spf': spf_result,
-            'dmarc': dmarc_result,
-            'dkim': {'has_dkim': False, 'records': []}
-        }
-        recommendations = recommendation_engine.generate_recommendations(component_scores, early_parsed_data)
+        recommendations = recommendation_engine.generate_recommendations(component_scores, mx_result, spf_result, dmarc_result, {'has_dkim': False, 'records': []})
         
         early_results = {
             "domain": domain,
@@ -749,13 +743,7 @@ def check_domain():
     security_score = scoring_engine.calculate_total_score(component_scores)
     
     # Generate recommendations
-    parsed_data = {
-        'mx': mx_result,
-        'spf': spf_result,
-        'dmarc': dmarc_result,
-        'dkim': dkim_result
-    }
-    recommendations = recommendation_engine.generate_recommendations(component_scores, parsed_data)
+    recommendations = recommendation_engine.generate_recommendations(component_scores, mx_result, spf_result, dmarc_result, dkim_result)
     
     # Compile comprehensive results
     results = {
@@ -837,5 +825,4 @@ def email_report():
         return jsonify({"error": "Internal server error"}), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=5000)
