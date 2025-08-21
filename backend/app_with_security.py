@@ -34,7 +34,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+
+# Environment configuration
+ENVIRONMENT = os.environ.get('ENVIRONMENT', 'local')
+
+# Configure CORS for staging environment
+if ENVIRONMENT == 'staging':
+    CORS(app, origins=[
+        'https://astraverify-frontend-staging-1098627686587.us-central1.run.app',
+        'https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app'
+    ])
+else:
+    CORS(app)  # Enable CORS for all routes
 
 # Initialize security components
 request_logger = RequestLogger()
@@ -46,9 +57,6 @@ ip_blocker = IPBlocker()
 config_loader = ConfigLoader('config')
 scoring_engine = ScoringEngine(config_loader)
 recommendation_engine = RecommendationEngine(config_loader)
-
-# Environment configuration
-ENVIRONMENT = os.environ.get('ENVIRONMENT', 'local')
 logger.info(f"Starting AstraVerify backend with ENHANCED security in {ENVIRONMENT} environment")
 
 # Admin authentication
