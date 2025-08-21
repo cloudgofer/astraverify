@@ -137,7 +137,12 @@ def require_admin_auth(f):
     """Decorator to require admin authentication"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        token = request.cookies.get('admin_token')
+        # Check for token in Authorization header first, then cookies
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        else:
+            token = request.cookies.get('admin_token')
         
         if not token:
             return jsonify({"error": "Authentication required"}), 401
@@ -251,7 +256,7 @@ def create_admin_routes(app):
             
             session_token = session_manager.create_session(user_info)
             
-            return jsonify({
+            response = jsonify({
                 "success": True,
                 "message": "Authentication successful",
                 "user": {
@@ -262,6 +267,12 @@ def create_admin_routes(app):
                 },
                 "token": session_token
             })
+            
+            # Set the token as a cookie for server-side access
+            response.set_cookie('admin_token', session_token, max_age=8*60*60, httponly=False, samesite='Lax')
+            
+            # Redirect to login page with success and token
+            return redirect(f'/admin/ui/login?auth_result=success&token={session_token}')
             
         except Exception as e:
             logger.error(f"Admin auth error: {e}")

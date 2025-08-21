@@ -58,10 +58,10 @@ fi
 
 # Start the enhanced backend
 echo -e "${BLUE}Starting Enhanced DKIM Backend...${NC}"
-echo -e "${GREEN}Server will be available at: http://localhost:5000${NC}"
-echo -e "${GREEN}Admin UI: http://localhost:5000/admin/ui/login${NC}"
-echo -e "${GREEN}Health Check: http://localhost:5000/api/health${NC}"
-echo -e "${GREEN}Test Domain: http://localhost:5000/api/check?domain=google.com${NC}"
+echo -e "${GREEN}Server will be available at: http://localhost:5001${NC}"
+echo -e "${GREEN}Admin UI: http://localhost:5001/admin/ui/login${NC}"
+echo -e "${GREEN}Health Check: http://localhost:5001/api/health${NC}"
+echo -e "${GREEN}Test Domain: http://localhost:5001/api/check?domain=google.com${NC}"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop the server${NC}"
 echo ""

@@ -59,8 +59,8 @@ nano .env
 ENVIRONMENT=local
 
 # Google OAuth 2.0 Configuration
-GOOGLE_OAUTH_CLIENT_ID=123456789-abcdefghijklmnop.apps.googleusercontent.com
-GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-abcdefghijklmnopqrstuvwxyz
+GOOGLE_OAUTH_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-google-oauth-client-secret
 GOOGLE_OAUTH_REDIRECT_URI=http://localhost:5001/admin/auth/callback
 
 # JWT Configuration

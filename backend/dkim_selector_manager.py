@@ -138,23 +138,32 @@ class DKIMSelectorManager:
     def _get_admin_selectors(self, domain: str) -> List[Dict[str, Any]]:
         """Get admin-managed selectors for a domain"""
         try:
+            # Try Firestore first
             db = firestore_manager._get_client()
-            if not db:
-                return []
+            if db:
+                try:
+                    # Use environment-specific collection
+                    collection_name = 'dkim_selectors'
+                    if self.environment == 'staging':
+                        collection_name = 'dkim_selectors_staging'
+                    elif self.environment == 'local':
+                        collection_name = 'dkim_selectors_local'
+                    
+                    doc_ref = db.collection(collection_name).document(domain)
+                    doc = doc_ref.get()
+                    
+                    if doc.exists:
+                        data = doc.to_dict()
+                        return data.get('admin_selectors', [])
+                    
+                    return []
+                    
+                except Exception as e:
+                    logger.warning(f"Firestore failed for {domain}, using local storage: {e}")
             
-            # Use environment-specific collection
-            collection_name = 'dkim_selectors'
-            if self.environment == 'staging':
-                collection_name = 'dkim_selectors_staging'
-            elif self.environment == 'local':
-                collection_name = 'dkim_selectors_local'
-            
-            doc_ref = db.collection(collection_name).document(domain)
-            doc = doc_ref.get()
-            
-            if doc.exists:
-                data = doc.to_dict()
-                return data.get('admin_selectors', [])
+            # Fallback to local storage
+            if hasattr(self, '_local_storage') and domain in self._local_storage:
+                return self._local_storage[domain].get('admin_selectors', [])
             
             return []
             
@@ -238,32 +247,83 @@ class DKIMSelectorManager:
             # Test selector before adding
             test_result = self._test_selector(domain, selector)
             
+            # Try Firestore first
             db = firestore_manager._get_client()
-            if not db:
-                return False
+            if db:
+                try:
+                    # Use environment-specific collection
+                    collection_name = 'dkim_selectors'
+                    if self.environment == 'staging':
+                        collection_name = 'dkim_selectors_staging'
+                    elif self.environment == 'local':
+                        collection_name = 'dkim_selectors_local'
+                    
+                    doc_ref = db.collection(collection_name).document(domain)
+                    
+                    # Get existing data
+                    doc = doc_ref.get()
+                    if doc.exists:
+                        data = doc.to_dict()
+                        admin_selectors = data.get('admin_selectors', [])
+                    else:
+                        data = {}
+                        admin_selectors = []
+                    
+                    # Check if selector already exists
+                    for existing in admin_selectors:
+                        if existing['selector'] == selector:
+                            logger.warning(f"Selector {selector} already exists for {domain}")
+                            return False
+                    
+                    # Add new selector
+                    new_selector = {
+                        'selector': selector,
+                        'added_by': added_by,
+                        'added_date': datetime.utcnow(),
+                        'notes': notes,
+                        'priority': priority,
+                        'status': 'active',
+                        'verification_status': 'verified' if test_result['valid'] else 'failed',
+                        'last_tested': datetime.utcnow(),
+                        'test_results': test_result
+                    }
+                    
+                    admin_selectors.append(new_selector)
+                    
+                    # Update document
+                    data['admin_selectors'] = admin_selectors
+                    data['last_updated'] = datetime.utcnow()
+                    
+                    doc_ref.set(data, merge=True)
+                    
+                    logger.info(f"Added admin selector {selector} for {domain} to Firestore")
+                    return True
+                    
+                except Exception as e:
+                    logger.warning(f"Firestore failed for {domain}, using local storage: {e}")
             
-            # Use environment-specific collection
-            collection_name = 'dkim_selectors'
-            if self.environment == 'staging':
-                collection_name = 'dkim_selectors_staging'
-            elif self.environment == 'local':
-                collection_name = 'dkim_selectors_local'
+            # Fallback to local storage
+            return self._add_admin_selector_local(domain, selector, notes, priority, added_by, test_result)
             
-            doc_ref = db.collection(collection_name).document(domain)
+        except Exception as e:
+            logger.error(f"Failed to add admin selector {selector} for {domain}: {e}")
+            return False
+    
+    def _add_admin_selector_local(self, domain: str, selector: str, notes: str, 
+                                 priority: str, added_by: str, test_result: dict) -> bool:
+        """Add admin selector to local storage (fallback when Firestore is unavailable)"""
+        try:
+            # Initialize local storage if not exists
+            if not hasattr(self, '_local_storage'):
+                self._local_storage = {}
             
-            # Get existing data
-            doc = doc_ref.get()
-            if doc.exists:
-                data = doc.to_dict()
-                admin_selectors = data.get('admin_selectors', [])
-            else:
-                data = {}
-                admin_selectors = []
+            if domain not in self._local_storage:
+                self._local_storage[domain] = {'admin_selectors': []}
             
             # Check if selector already exists
-            for existing in admin_selectors:
+            for existing in self._local_storage[domain]['admin_selectors']:
                 if existing['selector'] == selector:
-                    logger.warning(f"Selector {selector} already exists for {domain}")
+                    logger.warning(f"Selector {selector} already exists for {domain} (local)")
                     return False
             
             # Add new selector
@@ -279,19 +339,14 @@ class DKIMSelectorManager:
                 'test_results': test_result
             }
             
-            admin_selectors.append(new_selector)
+            self._local_storage[domain]['admin_selectors'].append(new_selector)
+            self._local_storage[domain]['last_updated'] = datetime.utcnow()
             
-            # Update document
-            data['admin_selectors'] = admin_selectors
-            data['last_updated'] = datetime.utcnow()
-            
-            doc_ref.set(data, merge=True)
-            
-            logger.info(f"Added admin selector {selector} for {domain}")
+            logger.info(f"Added admin selector {selector} for {domain} to local storage")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to add admin selector {selector} for {domain}: {e}")
+            logger.error(f"Failed to add admin selector to local storage for {domain}: {e}")
             return False
     
     def remove_admin_selector(self, domain: str, selector: str) -> bool:

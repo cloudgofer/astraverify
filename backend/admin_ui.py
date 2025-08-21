@@ -40,6 +40,19 @@ ADMIN_LOGIN_TEMPLATE = """
     </div>
     
     <script>
+        // Check if we're returning from OAuth callback
+        const urlParams = new URLSearchParams(window.location.search);
+        const authResult = urlParams.get('auth_result');
+        
+        if (authResult === 'success') {
+            // Get token from URL params or localStorage
+            const token = urlParams.get('token') || localStorage.getItem('admin_token');
+            if (token) {
+                localStorage.setItem('admin_token', token);
+                window.location.href = '/admin/ui/dashboard';
+            }
+        }
+        
         function loginWithGoogle() {
             fetch('/admin/auth/google')
                 .then(response => response.json())
@@ -237,6 +250,19 @@ DKIM_SELECTOR_MANAGEMENT_TEMPLATE = """
     <script>
         const domain = '{{ domain }}';
         
+        // Helper function to get cookie value
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
+        }
+        
+        // Helper function to get JWT token
+        function getAuthToken() {
+            return localStorage.getItem('admin_token') || getCookie('admin_token');
+        }
+        
         function showAddSelectorModal() {
             document.getElementById('addSelectorModal').style.display = 'block';
         }
@@ -252,10 +278,20 @@ DKIM_SELECTOR_MANAGEMENT_TEMPLATE = """
             const priority = document.getElementById('selectorPriority').value;
             const notes = document.getElementById('selectorNotes').value;
             
+            // Get the JWT token from localStorage or cookies
+            const token = localStorage.getItem('admin_token') || getCookie('admin_token');
+            
+            if (!token) {
+                alert('Authentication required. Please log in again.');
+                window.location.href = '/admin/ui/login';
+                return;
+            }
+            
             fetch(`/admin/domains/${domain}/selectors`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
                     selector: selector,
@@ -278,7 +314,18 @@ DKIM_SELECTOR_MANAGEMENT_TEMPLATE = """
         });
         
         function testSelector(selector) {
-            fetch(`/admin/domains/${domain}/selectors/${selector}/test`)
+            const token = getAuthToken();
+            if (!token) {
+                alert('Authentication required. Please log in again.');
+                window.location.href = '/admin/ui/login';
+                return;
+            }
+            
+            fetch(`/admin/domains/${domain}/selectors/${selector}/test`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
                 .then(response => response.json())
                 .then(data => {
                     if (data.test_result.valid) {
@@ -294,8 +341,18 @@ DKIM_SELECTOR_MANAGEMENT_TEMPLATE = """
         
         function removeSelector(selector) {
             if (confirm(`Are you sure you want to remove selector '${selector}'?`)) {
+                const token = getAuthToken();
+                if (!token) {
+                    alert('Authentication required. Please log in again.');
+                    window.location.href = '/admin/ui/login';
+                    return;
+                }
+                
                 fetch(`/admin/domains/${domain}/selectors/${selector}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
                 })
                 .then(response => response.json())
                 .then(data => {
