@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import config from './config.local';
+import config from './config';
 import { getFooterText } from './version';
 import './App.css';
 
