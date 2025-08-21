@@ -4,10 +4,15 @@ import re
 import jwt
 import requests
 from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional, Tuple
 from flask import Flask, request, jsonify, g, redirect, url_for, session
 from functools import wraps
+from dotenv import load_dotenv
 from dkim_selector_manager import dkim_selector_manager
 from enhanced_dkim_scanner import enhanced_dkim_scanner
+
+# Load environment variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +20,7 @@ logger = logging.getLogger(__name__)
 GOOGLE_OAUTH_CONFIG = {
     'client_id': os.environ.get('GOOGLE_OAUTH_CLIENT_ID', 'your-google-oauth-client-id.apps.googleusercontent.com'),
     'client_secret': os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', 'your-google-oauth-client-secret'),
-    'redirect_uri': os.environ.get('GOOGLE_OAUTH_REDIRECT_URI', 'http://localhost:5000/admin/auth/callback'),
+    'redirect_uri': os.environ.get('GOOGLE_OAUTH_REDIRECT_URI', 'http://localhost:5001/admin/auth/callback'),
     'scopes': [
         'https://www.googleapis.com/auth/userinfo.email',
         'https://www.googleapis.com/auth/userinfo.profile'
