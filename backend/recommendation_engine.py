@@ -39,6 +39,20 @@ class RecommendationEngine:
         """Generate MX-specific recommendations"""
         recommendations = []
         
+        # Check if MX records are completely missing
+        if not mx_data.get('has_mx', False):
+            rec = self._get_recommendation('mx', 'mx_records_missing')
+            if rec:
+                recommendations.append(rec)
+            return recommendations  # Return early if no MX records
+        
+        # Check base score (presence of MX records)
+        base_score = mx_score.get('details', {}).get('base', {}).get('points', 0)
+        if base_score == 0:
+            rec = self._get_recommendation('mx', 'mx_base_score == 0')
+            if rec:
+                recommendations.append(rec)
+        
         # Check redundancy
         redundancy_score = mx_score.get('details', {}).get('redundancy', {}).get('points', 0)
         if redundancy_score < 3:

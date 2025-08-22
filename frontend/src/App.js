@@ -507,7 +507,7 @@ function App() {
         checkDomain(domainParam);
       }, 500);
     }
-  }, [domain, loading, isEditing, checkDomain]); // Include all dependencies
+  }, []); // Only run once on mount
 
     const refreshStatistics = async () => {
     try {
@@ -1142,6 +1142,13 @@ function App() {
                 {/* Issues Found Section */}
                 {(() => {
                   const issues = [];
+                  if (!result.mx?.enabled) {
+                    issues.push({
+                      title: "No MX Records Found",
+                      description: "No MX records found - email delivery will fail",
+                      type: "critical"
+                    });
+                  }
                   if (!result.dkim?.enabled) {
                     issues.push({
                       title: "No DKIM Records Found",
@@ -1170,6 +1177,13 @@ function App() {
                     <div className="issues-list">
                       {(() => {
                         const issues = [];
+                        if (!result.mx?.enabled) {
+                          issues.push({
+                            title: "No MX Records Found",
+                            description: "No MX records found - email delivery will fail",
+                            type: "critical"
+                          });
+                        }
                         if (!result.dkim?.enabled) {
                           issues.push({
                             title: "No DKIM Records Found",
