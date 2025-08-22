@@ -1283,8 +1283,10 @@ def get_domain_history(domain):
 @require_admin_auth
 def get_analytics_statistics():
     """Get analytics statistics"""
+    logger.info("=== ANALYTICS STATISTICS ENDPOINT CALLED ===")
     try:
         stats = firestore_manager.get_statistics()
+        logger.info(f"Firestore stats: {stats}")
         return jsonify({
             "success": True,
             "data": stats
@@ -1296,8 +1298,30 @@ def get_analytics_statistics():
 @app.route('/api/public/statistics', methods=['GET'])
 def get_public_statistics():
     """Get public statistics (no admin required)"""
+    logger.info("=== STATISTICS ENDPOINT CALLED ===")
     try:
         stats = firestore_manager.get_statistics()
+        logger.info(f"Firestore stats: {stats}")
+        
+        # If Firestore fails or returns empty stats, try to load mock statistics
+        if not stats or stats.get('total_analyses', 0) == 0:
+            logger.info("Firestore returned empty stats, trying mock statistics...")
+            try:
+                import json
+                import os
+                mock_stats_file = os.path.join(os.path.dirname(__file__), 'mock_statistics.json')
+                logger.info(f"Looking for mock statistics file: {mock_stats_file}")
+                if os.path.exists(mock_stats_file):
+                    logger.info("Mock statistics file found, loading...")
+                    with open(mock_stats_file, 'r') as f:
+                        mock_stats = json.load(f)
+                    logger.info(f"Using mock statistics for local development: {mock_stats}")
+                    stats = mock_stats
+                else:
+                    logger.warning(f"Mock statistics file not found at: {mock_stats_file}")
+            except Exception as mock_error:
+                logger.warning(f"Failed to load mock statistics: {mock_error}")
+        
         # Return only basic stats for public consumption
         public_stats = {
             "total_analyses": stats.get('total_analyses', 0),
@@ -1305,6 +1329,7 @@ def get_public_statistics():
             "average_security_score": stats.get('average_security_score', 0),
             "email_provider_distribution": stats.get('email_provider_distribution', {})
         }
+        logger.info(f"Final public stats: {public_stats}")
         return jsonify({
             "success": True,
             "data": public_stats
@@ -1312,6 +1337,35 @@ def get_public_statistics():
     except Exception as e:
         logger.error(f"Failed to get public statistics: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/test-mock-stats', methods=['GET'])
+def test_mock_stats():
+    """Test mock statistics loading"""
+    try:
+        import json
+        import os
+        mock_stats_file = os.path.join(os.path.dirname(__file__), 'mock_statistics.json')
+        
+        if os.path.exists(mock_stats_file):
+            with open(mock_stats_file, 'r') as f:
+                mock_stats = json.load(f)
+            return jsonify({
+                "success": True,
+                "message": "Mock statistics loaded successfully",
+                "file_path": mock_stats_file,
+                "data": mock_stats
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Mock statistics file not found",
+                "file_path": mock_stats_file
+            })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 @app.route('/api/test-email', methods=['GET'])
 def test_email_config():

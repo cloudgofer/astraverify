@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import config from './config';
+import config from './config.local';
 import { getFooterText } from './version';
 import './App.css';
 
@@ -699,7 +699,7 @@ function App() {
               </div>
             )}
             
-            {/* Overall Security Score Section */}
+            {/* Overall Security Score Section - Only show when analysis is complete */}
             {result.security_score && !result.progressive && (
               <div className="overall-security-score">
                 <h2>Overall Security Score</h2>
@@ -781,7 +781,7 @@ function App() {
             )}
 
             {/* Security Summary Section - Only show when analysis is complete */}
-            {!result.progressive && (
+            {result.security_score && !result.progressive && (
               <div className="security-summary">
                 <h3>Security Summary</h3>
                 <div className="summary-cards">
@@ -829,7 +829,7 @@ function App() {
             )}
 
             {/* Security Components Section - Only show when analysis is complete */}
-            {!result.progressive && (
+            {result.security_score && !result.progressive && (
               <div className="security-components">
                 <h3>Security Components</h3>
                 <div className="components-grid">
@@ -980,18 +980,18 @@ function App() {
                   </div>
 
                   {/* DKIM Records Component */}
-                  <div className={`component-card ${result.dkim?.enabled ? 'success' : 'failure'}`}>
+                  <div className={`component-card ${result.dkim?.checking ? 'loading' : result.dkim?.enabled ? 'success' : 'failure'}`}>
                     <div className="component-header" onClick={() => toggleComponent('dkim')}>
                       <div className="component-info">
                         <h4>DKIM Records</h4>
                         <p>DomainKeys Identified Mail</p>
                       </div>
                       <div className="component-status">
-                        <span className={`status-icon ${getComponentIconClass(getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim')))}`}>
-                          {getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim'))}
+                        <span className={`status-icon ${result.dkim?.checking ? 'loading' : getComponentIconClass(getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim')))}`}>
+                          {result.dkim?.checking ? '⏳' : getComponentIcon(result.dkim?.enabled, getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim'))}
                         </span>
                         <span className="component-score">
-                          {getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim')}/{getComponentMaxScore('dkim')}
+                          {result.dkim?.checking ? 'Checking...' : `${getComponentScore(result.security_score?.scoring_details?.dkim_base || 0, result.security_score?.scoring_details?.dkim_bonus || 0, 'dkim')}/${getComponentMaxScore('dkim')}`}
                         </span>
                         <span className={`expand-icon ${expandedComponents.dkim ? 'expanded' : ''}`}>
                           ▼
@@ -1003,11 +1003,17 @@ function App() {
                         <div className="component-description">
                           <h5>{getComponentDescription('dkim').title}</h5>
                           <p>{getComponentDescription('dkim').description}</p>
-                          <div className={`status-message ${result.dkim?.enabled ? 'success' : 'failure'}`}>
-                            <span className={`status-icon ${result.dkim?.enabled ? 'success' : 'error'}`}>
-                              {result.dkim?.enabled ? '✅' : '❌'}
+                          <div className={`status-message ${result.dkim?.checking ? 'loading' : result.dkim?.enabled ? 'success' : 'failure'}`}>
+                            <span className={`status-icon ${result.dkim?.checking ? 'loading' : result.dkim?.enabled ? 'success' : 'error'}`}>
+                              {result.dkim?.checking ? '⏳' : result.dkim?.enabled ? '✅' : '❌'}
                             </span>
-                            <span>{result.dkim?.enabled ? getComponentDescription('dkim').successMessage : getComponentDescription('dkim').failureMessage}</span>
+                            <span>
+                              {result.dkim?.checking 
+                                ? 'DKIM analysis in progress... Please wait while we check for DKIM records.' 
+                                : result.dkim?.enabled 
+                                  ? getComponentDescription('dkim').successMessage 
+                                  : getComponentDescription('dkim').failureMessage}
+                            </span>
                           </div>
                         </div>
                         <div className="records-section">
@@ -1130,8 +1136,8 @@ function App() {
 
 
 
-            {/* Issues and Recommendations Section - Split into two sections like email */}
-            {!result.progressive && (
+            {/* Issues and Recommendations Section - Only show when analysis is complete */}
+            {result.security_score && !result.progressive && (
               <>
                 {/* Issues Found Section */}
                 {(() => {
@@ -1245,8 +1251,8 @@ function App() {
               </>
             )}
 
-            {/* Email Report Button - Only show when analysis is complete */}
-            {!result.progressive && (
+            {/* Email Report Button - Show when analysis is complete */}
+            {result.security_score && !result.progressive && (
               <div className="email-report-section">
                 <button
                   onClick={() => setShowEmailModal(true)}
@@ -1260,8 +1266,8 @@ function App() {
               </div>
             )}
 
-            {/* Analysis Footer - Only show when analysis is complete */}
-            {!result.progressive && (
+            {/* Analysis Footer - Show when analysis is complete */}
+            {result.security_score && !result.progressive && (
               <div className="analysis-footer">
                 <p>Analysis completed at: {new Date(result.analysis_timestamp).toLocaleString()}</p>
               </div>
@@ -1277,7 +1283,7 @@ function App() {
           </div>
         )}
 
-        {!statsLoading && statistics && (
+        {!statsLoading && (
           <div className="statistics-section">
             <h3>Platform Statistics</h3>
             <p className="stats-subtitle">Trusted by organizations worldwide for email security analysis</p>
@@ -1300,7 +1306,7 @@ function App() {
               <div className="stat-card">
                 <h4>Top Provider</h4>
                 <p className="stat-number">
-                  {statistics.email_provider_distribution && Object.keys(statistics.email_provider_distribution).length > 0 
+                  {statistics?.email_provider_distribution && Object.keys(statistics.email_provider_distribution).length > 0 
                     ? Object.keys(statistics.email_provider_distribution)[0] 
                     : 'N/A'}
                 </p>

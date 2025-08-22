@@ -543,6 +543,11 @@
   box-shadow: 0 2px 8px rgba(220, 53, 69, 0.1);
 }
 
+.component-card.loading {
+  border-color: #6c757d;
+  box-shadow: 0 2px 8px rgba(108, 117, 125, 0.1);
+}
+
 .component-header {
   background: #f8f9fa;
   padding: 1.5rem;
@@ -603,6 +608,17 @@
 
 .status-icon.error {
   color: #dc3545;
+}
+
+.status-icon.loading {
+  color: #6c757d;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
 }
 
 /* Neutral checkmark for progressive loading (not colored) */
@@ -679,6 +695,11 @@
 .status-message.failure {
   background: #f8d7da;
   color: #721c24;
+}
+
+.status-message.loading {
+  background: #e2e3e5;
+  color: #495057;
 }
 
 .records-section h5 {
