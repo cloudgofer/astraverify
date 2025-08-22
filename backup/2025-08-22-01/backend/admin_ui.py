@@ -1,7 +1,5 @@
 from flask import Flask, render_template_string, request, jsonify, redirect, url_for
 import os
-import requests
-from datetime import datetime
 
 # Simple admin UI templates
 ADMIN_LOGIN_TEMPLATE = """
@@ -109,8 +107,7 @@ ADMIN_DASHBOARD_TEMPLATE = """
             </div>
             
             <ul class="nav-menu">
-                <li><a href="/admin/ui/dashboard" class="active">Dashboard</a></li>
-                <li><a href="/admin/ui/ip-management">IP Management</a></li>
+                <li><a href="/admin/dashboard" class="active">Dashboard</a></li>
                 <li><a href="/admin/domains">Domain Management</a></li>
                 <li><a href="/admin/selectors">DKIM Selectors</a></li>
                 <li><a href="/admin/analytics">Analytics</a></li>
@@ -137,15 +134,11 @@ ADMIN_DASHBOARD_TEMPLATE = """
                     <h3>Today's Scans</h3>
                     <p class="stat-number">{{ stats.today_scans }}</p>
                 </div>
-                <div class="stat-card">
-                    <h3>Blocked IPs</h3>
-                    <p class="stat-number">{{ stats.blocked_ips }}</p>
-                </div>
             </div>
             
             <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <h3>Quick Actions</h3>
-                <p><a href="/admin/ui/ip-management">Manage IPs</a> | <a href="/admin/domains">Manage Domains</a> | <a href="/admin/selectors">Manage DKIM Selectors</a> | <a href="/admin/analytics">View Analytics</a></p>
+                <p><a href="/admin/domains">Manage Domains</a> | <a href="/admin/selectors">Manage DKIM Selectors</a> | <a href="/admin/analytics">View Analytics</a></p>
             </div>
         </main>
     </div>
@@ -401,245 +394,6 @@ DKIM_SELECTOR_MANAGEMENT_TEMPLATE = """
 </html>
 """
 
-IP_MANAGEMENT_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>AstraVerify Admin - IP Management</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }
-        .admin-layout { display: flex; min-height: 100vh; }
-        .admin-nav { width: 250px; background: #2c3e50; color: white; padding: 20px; }
-        .nav-header h2 { margin: 0 0 20px 0; }
-        .user-info { margin-bottom: 30px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 4px; }
-        .nav-menu { list-style: none; padding: 0; }
-        .nav-menu li { margin-bottom: 10px; }
-        .nav-menu a { color: white; text-decoration: none; padding: 10px; display: block; border-radius: 4px; }
-        .nav-menu a:hover, .nav-menu a.active { background: rgba(255,255,255,0.1); }
-        .admin-main { flex: 1; padding: 30px; }
-        .ip-section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .ip-item { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
-        .ip-item.blocked { border-left: 4px solid #dc3545; background: #fff5f5; }
-        .ip-item.premium { border-left: 4px solid #28a745; background: #f0fff4; }
-        .ip-info { flex: 1; }
-        .ip-actions { display: flex; gap: 10px; }
-        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-success { background: #28a745; color: white; }
-        .btn-warning { background: #ffc107; color: black; }
-        .status-badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .status-blocked { background: #dc3545; color: white; }
-        .status-premium { background: #28a745; color: white; }
-        .status-normal { background: #6c757d; color: white; }
-        .refresh-btn { background: #17a2b8; color: white; padding: 10px 20px; margin-bottom: 20px; }
-        .loading { opacity: 0.5; pointer-events: none; }
-        .error-message { background: #f8d7da; color: #721c24; padding: 10px; border-radius: 4px; margin-bottom: 20px; }
-        .success-message { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin-bottom: 20px; }
-    </style>
-</head>
-<body>
-    <div class="admin-layout">
-        <nav class="admin-nav">
-            <div class="nav-header">
-                <h2>🛡️ AstraVerify Admin</h2>
-                <div class="user-info">
-                    <strong>{{ user.name }}</strong><br>
-                    <small>{{ user.email }}</small><br>
-                    <small>({{ user.role }})</small>
-                </div>
-            </div>
-            
-            <ul class="nav-menu">
-                <li><a href="/admin/ui/dashboard">Dashboard</a></li>
-                <li><a href="/admin/ui/ip-management" class="active">IP Management</a></li>
-                <li><a href="/admin/domains">Domain Management</a></li>
-                <li><a href="/admin/selectors">DKIM Selectors</a></li>
-                <li><a href="/admin/analytics">Analytics</a></li>
-            </ul>
-            
-            <div style="margin-top: 30px;">
-                <a href="/admin/logout" class="logout-btn">Logout</a>
-            </div>
-        </nav>
-        
-        <main class="admin-main">
-            <h1>🔒 IP Management Dashboard</h1>
-            
-            <div id="messages"></div>
-            
-            <button class="btn refresh-btn" onclick="loadIPData()">🔄 Refresh Data</button>
-            
-            <div class="ip-section">
-                <h2>🚫 Blocked IPs</h2>
-                <div id="blocked-ips" class="loading">
-                    <p>Loading blocked IPs...</p>
-                </div>
-            </div>
-            
-            <div class="ip-section">
-                <h2>⭐ Premium IPs</h2>
-                <div id="premium-ips">
-                    <p>Premium IPs are configured via environment variables (PREMIUM_IPS)</p>
-                    <div id="premium-ips-list"></div>
-                </div>
-            </div>
-            
-            <div class="ip-section">
-                <h2>🔑 API Keys</h2>
-                <div id="api-keys">
-                    <p>Valid API keys are configured via environment variables (VALID_API_KEYS)</p>
-                    <div id="api-keys-list"></div>
-                </div>
-            </div>
-        </main>
-    </div>
-    
-    <script>
-        // Configuration
-        const API_BASE = window.location.origin;
-        const ADMIN_API_KEY = 'astraverify-admin-2024';
-        
-        // Helper function to show messages
-        function showMessage(message, type = 'success') {
-            const messagesDiv = document.getElementById('messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = type === 'success' ? 'success-message' : 'error-message';
-            messageDiv.textContent = message;
-            messagesDiv.appendChild(messageDiv);
-            
-            // Auto-remove after 5 seconds
-            setTimeout(() => {
-                messageDiv.remove();
-            }, 5000);
-        }
-        
-        // Load blocked IPs
-        async function loadBlockedIPs() {
-            try {
-                const response = await fetch(`${API_BASE}/api/admin/blocked-ips`, {
-                    headers: {
-                        'X-Admin-API-Key': ADMIN_API_KEY
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                const blockedIPsDiv = document.getElementById('blocked-ips');
-                
-                if (data.blocked_ips && Object.keys(data.blocked_ips).length > 0) {
-                    let html = '<div class="ip-list">';
-                    
-                    for (const [ip, info] of Object.entries(data.blocked_ips)) {
-                        const blockedUntil = info.blocked_until ? new Date(info.blocked_until).toLocaleString() : 'Permanent';
-                        const timeRemaining = info.blocked_until ? getTimeRemaining(info.blocked_until) : 'N/A';
-                        
-                        html += `
-                            <div class="ip-item blocked">
-                                <div class="ip-info">
-                                    <strong>${ip}</strong>
-                                    <br><small>Reason: ${info.reason}</small>
-                                    <br><small>Level: ${info.level}</small>
-                                    <br><small>Blocked until: ${blockedUntil}</small>
-                                    <br><small>Time remaining: ${timeRemaining}</small>
-                                    <br><small>Blocked at: ${new Date(info.blocked_at).toLocaleString()}</small>
-                                </div>
-                                <div class="ip-actions">
-                                    <button class="btn btn-success" onclick="unblockIP('${ip}')">Unblock</button>
-                                </div>
-                            </div>
-                        `;
-                    }
-                    
-                    html += '</div>';
-                    blockedIPsDiv.innerHTML = html;
-                } else {
-                    blockedIPsDiv.innerHTML = '<p>No IPs are currently blocked.</p>';
-                }
-                
-                blockedIPsDiv.classList.remove('loading');
-                
-            } catch (error) {
-                console.error('Error loading blocked IPs:', error);
-                document.getElementById('blocked-ips').innerHTML = 
-                    '<p class="error-message">Error loading blocked IPs: ' + error.message + '</p>';
-                document.getElementById('blocked-ips').classList.remove('loading');
-            }
-        }
-        
-        // Calculate time remaining
-        function getTimeRemaining(blockedUntil) {
-            const now = new Date();
-            const until = new Date(blockedUntil);
-            const diff = until - now;
-            
-            if (diff <= 0) {
-                return 'Expired';
-            }
-            
-            const hours = Math.floor(diff / (1000 * 60 * 60));
-            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-            
-            if (hours > 0) {
-                return `${hours}h ${minutes}m`;
-            } else {
-                return `${minutes}m`;
-            }
-        }
-        
-        // Unblock an IP
-        async function unblockIP(ip) {
-            if (!confirm(`Are you sure you want to unblock IP ${ip}?`)) {
-                return;
-            }
-            
-            try {
-                const response = await fetch(`${API_BASE}/api/admin/unblock-ip/${ip}`, {
-                    method: 'POST',
-                    headers: {
-                        'X-Admin-API-Key': ADMIN_API_KEY
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    showMessage(`IP ${ip} has been unblocked successfully.`);
-                    loadBlockedIPs(); // Refresh the list
-                } else {
-                    showMessage(`Failed to unblock IP ${ip}: ${data.message}`, 'error');
-                }
-                
-            } catch (error) {
-                console.error('Error unblocking IP:', error);
-                showMessage(`Error unblocking IP ${ip}: ${error.message}`, 'error');
-            }
-        }
-        
-        // Load all IP data
-        async function loadIPData() {
-            await loadBlockedIPs();
-        }
-        
-        // Load data on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            loadIPData();
-        });
-        
-        // Auto-refresh every 30 seconds
-        setInterval(loadBlockedIPs, 30000);
-    </script>
-</body>
-</html>
-"""
-
 def create_admin_ui_routes(app):
     """Create admin UI routes"""
     
@@ -652,15 +406,7 @@ def create_admin_ui_routes(app):
     @app.route('/admin/ui/dashboard')
     def admin_ui_dashboard():
         """Admin dashboard page"""
-        # Get real blocked IP count
-        try:
-            from ip_blocker import IPBlocker
-            ip_blocker = IPBlocker()
-            blocked_ips = ip_blocker.get_blocked_ips()
-            blocked_ips_count = len(blocked_ips)
-        except:
-            blocked_ips_count = 0
-        
+        # Mock data for demonstration
         user = {
             'name': 'Admin User',
             'email': 'admin@astraverify.com',
@@ -669,8 +415,7 @@ def create_admin_ui_routes(app):
         stats = {
             'total_domains': 150,
             'active_selectors': 45,
-            'today_scans': 23,
-            'blocked_ips': blocked_ips_count
+            'today_scans': 23
         }
         return render_template_string(ADMIN_DASHBOARD_TEMPLATE, user=user, stats=stats)
     
@@ -717,16 +462,5 @@ def create_admin_ui_routes(app):
             discovered_selectors=discovered_selectors,
             brute_force_selectors=brute_force_selectors
         )
-    
-    @app.route('/admin/ui/ip-management')
-    def admin_ui_ip_management():
-        """IP management page"""
-        # Mock data for demonstration
-        user = {
-            'name': 'Admin User',
-            'email': 'admin@astraverify.com',
-            'role': 'super_admin'
-        }
-        return render_template_string(IP_MANAGEMENT_TEMPLATE, user=user)
     
     return app

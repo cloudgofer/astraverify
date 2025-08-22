@@ -26,9 +26,6 @@ from config_loader import ConfigLoader
 from scoring_engine import ScoringEngine
 from recommendation_engine import RecommendationEngine
 
-# Import admin UI
-from admin_ui import create_admin_ui_routes
-
 # Configure DNS resolver for better reliability
 dns.resolver.default_resolver = dns.resolver.Resolver(configure=True)
 
@@ -1780,9 +1777,6 @@ def email_report():
     except Exception as e:
         logger.error(f"Email report error: {e}")
         return jsonify({"error": "Internal server error"}), 500
-
-# Initialize admin UI routes
-create_admin_ui_routes(app)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
