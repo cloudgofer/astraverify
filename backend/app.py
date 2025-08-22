@@ -550,6 +550,8 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         
         # Add issues section if there are problems
         issues = []
+        if not mx.get('enabled'):
+            issues.append("No MX records found - email delivery will fail")
         if not dkim.get('enabled'):
             issues.append("No DKIM records found - emails may be marked as spam")
         if not spf.get('enabled'):
@@ -1236,6 +1238,24 @@ def complete_dkim_check():
     response_data = {
         "domain": domain,
         "dkim": dkim_response,
+        "mx": {
+            "enabled": mx_result['has_mx'],
+            "status": mx_result['status'],
+            "description": mx_result['description'],
+            "records": mx_result['records']
+        },
+        "spf": {
+            "enabled": spf_result['has_spf'],
+            "status": spf_result['status'],
+            "description": spf_result['description'],
+            "records": spf_result['records']
+        },
+        "dmarc": {
+            "enabled": dmarc_result['has_dmarc'],
+            "status": dmarc_result['status'],
+            "description": dmarc_result['description'],
+            "records": dmarc_result['records']
+        },
         "email_provider": email_provider,
         "security_score": security_score,
         "recommendations": recommendations,

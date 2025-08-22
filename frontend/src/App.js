@@ -127,6 +127,9 @@ function App() {
           const newResult = {
             ...prevResult,
             dkim: dkimData.dkim,
+            mx: dkimData.mx || prevResult.mx,
+            spf: dkimData.spf || prevResult.spf,
+            dmarc: dkimData.dmarc || prevResult.dmarc,
             email_provider: dkimData.email_provider,
             security_score: dkimData.security_score,
             recommendations: dkimData.recommendations || [],
@@ -135,6 +138,7 @@ function App() {
           };
           console.log('🔍 Updated result:', newResult);
           console.log('🔍 Final recommendations:', newResult.recommendations);
+          console.log('🔍 MX data from DKIM completion:', newResult.mx);
           return newResult;
         });
         
@@ -1142,6 +1146,13 @@ function App() {
                 {/* Issues Found Section */}
                 {(() => {
                   const issues = [];
+                  if (!result.mx?.enabled) {
+                    issues.push({
+                      title: "No MX Records Found",
+                      description: "No MX records found - email delivery will fail",
+                      type: "critical"
+                    });
+                  }
                   if (!result.dkim?.enabled) {
                     issues.push({
                       title: "No DKIM Records Found",
@@ -1170,6 +1181,13 @@ function App() {
                     <div className="issues-list">
                       {(() => {
                         const issues = [];
+                        if (!result.mx?.enabled) {
+                          issues.push({
+                            title: "No MX Records Found",
+                            description: "No MX records found - email delivery will fail",
+                            type: "critical"
+                          });
+                        }
                         if (!result.dkim?.enabled) {
                           issues.push({
                             title: "No DKIM Records Found",

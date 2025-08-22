@@ -1021,6 +1021,8 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         
         # Add issues section if there are problems
         issues = []
+        if not mx.get('enabled'):
+            issues.append("No MX records found - email delivery will fail")
         if not dkim.get('enabled'):
             issues.append("No DKIM records found - emails may be marked as spam")
         if not spf.get('enabled'):
