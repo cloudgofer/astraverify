@@ -44,6 +44,11 @@ function App() {
   const [emailSending, setEmailSending] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
+  // Update document title based on configuration
+  useEffect(() => {
+    document.title = config.APP_NAME;
+  }, []);
+
   const updateURL = (domain) => {
     const url = new URL(window.location);
     if (domain) {
