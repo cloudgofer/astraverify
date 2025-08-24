@@ -6,12 +6,12 @@ import './App.css';
 let config;
 try {
   // Check for environment-specific config
-  if (process.env.NODE_ENV === 'production') {
-    config = require('./config.production').default;
-  } else if (process.env.NODE_ENV === 'staging') {
+  if (process.env.REACT_APP_ENV === 'staging') {
     config = require('./config.staging').default;
   } else if (process.env.REACT_APP_ENV === 'local') {
     config = require('./config.local').default;
+  } else if (process.env.NODE_ENV === 'production') {
+    config = require('./config.production').default;
   } else {
     // Default fallback
     config = require('./config').default;
@@ -46,6 +46,7 @@ function App() {
 
   // Update document title based on configuration
   useEffect(() => {
+    console.log('Setting document title to:', config.APP_NAME);
     document.title = config.APP_NAME;
   }, []);
 
