@@ -86,7 +86,7 @@ print_status "To deploy to GCP, you'll need to:"
 print_status "1. Install Google Cloud SDK: https://cloud.google.com/sdk/docs/install"
 print_status "2. Run: gcloud auth login"
 print_status "3. Run: gcloud config set project YOUR_PROJECT_ID"
-print_status "4. Run: ./deploy/deploy_to_gcp.sh"
+print_status "4. Run: ./deploy/deploy_production.sh (for production) or ./deploy/deploy_staging.sh (for staging)"
 
 print_status "For local development:"
 print_status "Frontend: cd frontend && npm start"

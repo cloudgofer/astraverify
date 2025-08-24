@@ -65,7 +65,7 @@ if [ $? -eq 0 ]; then
     echo "  --member='serviceAccount:astraverify@astraverify.iam.gserviceaccount.com' \\"
     echo "  --role='roles/secretmanager.secretAccessor'"
     echo ""
-    echo "./deploy/deploy_to_gcp.sh astraverify"
+    echo "./deploy/deploy_production.sh (for production) or ./deploy/deploy_staging.sh (for staging)"
 else
     echo -e "${RED}❌ Failed to add password to secret${NC}"
     exit 1
