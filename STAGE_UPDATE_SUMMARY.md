@@ -42,6 +42,10 @@ Successfully updated the staging environment with all production configuration f
 curl -s "https://astraverify-frontend-staging-1098627686587.us-central1.run.app" | grep -o '<title>[^<]*</title>'
 # Result: Shows "<title>AstraVerify</title>" (generic title in initial HTML)
 # Note: React app updates document title to "AstraVerify (Staging)" when loaded
+
+# Backend API Configuration:
+# ✅ Now correctly points to staging backend: astraverify-backend-staging-1098627686587.us-central1.run.app
+# ✅ Shows staging statistics instead of production data
 ```
 
 ### **Backend Statistics Verification**
@@ -121,6 +125,7 @@ a1cbf10 - Cleanup: Remove redundant deploy_to_gcp.sh and update references
 The staging environment has been successfully updated with all production fixes and safeguards. The staging environment now:
 
 - ✅ Shows correct "AstraVerify (Staging)" title (updated by React app when JavaScript loads)
+- ✅ Uses staging backend API (shows staging statistics, not production)
 - ✅ Pulls statistics from staging data store
 - ✅ Has all production safeguards and validation
 - ✅ Uses proper backend configuration
