@@ -1,4 +1,3 @@
-from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import dns.resolver
@@ -11,7 +10,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from firestore_config import firestore_manager
-from dkim_optimizer_sync import dkim_optimizer_sync
 
 # Configure DNS resolver for better reliability
 dns.resolver.default_resolver = dns.resolver.Resolver(configure=True)
@@ -32,32 +30,9 @@ ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY', 'astraverify-admin-2024')
 
 # Email configuration
 EMAIL_SENDER = 'hi@astraverify.com'
-EMAIL_SMTP_SERVER = 'smtp.gmail.com'  # Gmail SMTP server
+EMAIL_SMTP_SERVER = 'smtp.dreamhost.com'  # DreamHost SMTP server
 EMAIL_SMTP_PORT = 587
 EMAIL_USERNAME = 'hi@astraverify.com'
-
-# Environment-specific email configuration
-if ENVIRONMENT == 'staging':
-    # STAGE Env: gsak aofx trxi jedl
-    EMAIL_SMTP_SERVER = 'smtp.gmail.com'
-    EMAIL_SMTP_PORT = 587
-    EMAIL_USERNAME = 'hi@astraverify.com'
-    STAGING_EMAIL_ENABLED = True
-    STAGING_APP_PASSWORD = 'gsak aofx trxi jedl'
-elif ENVIRONMENT == 'production':
-    # PROD Env: mads ghsj bhdf jcjm
-    EMAIL_SMTP_SERVER = 'smtp.gmail.com'
-    EMAIL_SMTP_PORT = 587
-    EMAIL_USERNAME = 'hi@astraverify.com'
-    STAGING_EMAIL_ENABLED = True
-    PROD_APP_PASSWORD = 'mads ghsj bhdf jcjm'
-else:
-    # LOCAL Env: juek rown cptq zkpo
-    EMAIL_SMTP_SERVER = 'smtp.gmail.com'
-    EMAIL_SMTP_PORT = 587
-    EMAIL_USERNAME = 'hi@astraverify.com'
-    STAGING_EMAIL_ENABLED = True
-    LOCAL_APP_PASSWORD = 'juek rown cptq zkpo'
 
 # Get email password from environment or GCP Secret Manager
 def get_email_password():
@@ -68,18 +43,7 @@ def get_email_password():
         logger.info("Using EMAIL_PASSWORD from environment variable")
         return password
     
-    # Use environment-specific app passwords
-    if ENVIRONMENT == 'staging':
-        logger.info("Using STAGING app password")
-        return STAGING_APP_PASSWORD
-    elif ENVIRONMENT == 'production':
-        logger.info("Using PRODUCTION app password")
-        return PROD_APP_PASSWORD
-    else:
-        logger.info("Using LOCAL app password")
-        return LOCAL_APP_PASSWORD
-    
-    # Fallback to GCP Secret Manager (if needed)
+    # If not in environment, try GCP Secret Manager
     try:
         from google.cloud import secretmanager
         client = secretmanager.SecretManagerServiceClient()
@@ -92,7 +56,6 @@ def get_email_password():
         return None
 
 EMAIL_PASSWORD = get_email_password()
-logger.info(f"Email password configured: {bool(EMAIL_PASSWORD)}")
 
 def require_admin_auth(f):
     """Decorator to require admin authentication"""
@@ -115,15 +78,6 @@ def get_mx_details(domain):
                 'server': str(mx.exchange),
                 'valid': True
             })
-        
-        # Sort MX records by priority (lower priority number = higher priority)
-        records.sort(key=lambda x: x['priority'])
-        
-        # Debug logging
-        logger.info(f"MX records after sorting for {domain}:")
-        for record in records:
-            logger.info(f"  Priority {record['priority']}: {record['server']}")
-        
         return {
             'has_mx': True,
             'records': records,
@@ -216,24 +170,53 @@ def get_dmarc_details(domain):
         }
 
 def get_dkim_details(domain, custom_selector=None):
-    """Get DKIM record information (optimized check)"""
-    # Get MX servers for provider-specific selector prioritization
-    mx_servers = []
+    """Get DKIM record information (comprehensive check)"""
+    # Load comprehensive DKIM selectors from file
     try:
-        mx_result = get_mx_details(domain)
-        if mx_result.get('has_mx'):
-            mx_servers = [record['server'] for record in mx_result.get('records', [])]
-    except:
-        pass
+        with open('resources/dkim_selectors.txt', 'r') as f:
+            common_selectors = [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        # Fallback to common selectors if file not found
+        common_selectors = ['default', 'google', 'k1', 'selector1', 'selector2', 'dreamhost', 'mailgun', 'sendgrid', 'zoho', 'yahoo']
     
-    # Use optimized DKIM checker
-    result = dkim_optimizer_sync.get_dkim_details_optimized(domain, custom_selector, mx_servers)
+    # Add custom selector if provided
+    if custom_selector and custom_selector not in common_selectors:
+        common_selectors.insert(0, custom_selector)  # Add at beginning for priority
     
-    # Remove internal timing info from result
-    if 'check_time' in result:
-        del result['check_time']
+    dkim_records = []
     
-    return result
+    for selector in common_selectors:
+        try:
+            dkim_domain = f"{selector}._domainkey.{domain}"
+            records = dns.resolver.resolve(dkim_domain, 'TXT')
+            for record in records:
+                record_text = record.to_text().strip('"')
+                if record_text.startswith('v=DKIM1'):
+                    dkim_records.append({
+                        'selector': selector,
+                        'record': record_text[:100] + '...' if len(record_text) > 100 else record_text,
+                        'valid': True,
+                        'full_record': record_text
+                    })
+        except:
+            continue
+    
+    if dkim_records:
+        return {
+            'has_dkim': True,
+            'records': dkim_records,
+            'status': 'Valid',
+            'description': f'Found {len(dkim_records)} DKIM record(s)',
+            'selectors_checked': len(common_selectors)
+        }
+    else:
+        return {
+            'has_dkim': False,
+            'records': [],
+            'status': 'Not Found',
+            'description': f'No DKIM records found (checked {len(common_selectors)} selectors)',
+            'selectors_checked': len(common_selectors)
+        }
 
 def detect_email_provider(mx_result, spf_result, dkim_result):
     """Detect the email service provider based on MX, SPF, and DKIM records"""
@@ -280,8 +263,8 @@ def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
     Base Scoring (100 points total):
     - MX Records: 25 points (essential for email delivery)
     - SPF Records: 25 points (prevents email spoofing)
-    - DMARC Records: 30 points (authentication reporting)
-    - DKIM Records: 20 points (email authentication)
+    - DMARC Records: 25 points (authentication reporting)
+    - DKIM Records: 25 points (email authentication)
     
     Bonus Points (up to 10 additional points):
     - Multiple MX records: +2 points (redundancy)
@@ -296,29 +279,15 @@ def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
     max_bonus = 10
     scoring_details = {}
     
-    # Base scoring (MX: 25, SPF: 25, DMARC: 30, DKIM: 20)
+    # Base scoring (25 points each)
     if mx_result['has_mx']:
-        # Check if MX records are actually functional
-        functional_mx = False
-        for record in mx_result['records']:
-            server = record.get('server', '')
-            # Skip non-functional servers like "." or empty strings
-            if server and server != '.' and server != '':
-                functional_mx = True
-                break
-        
-        if functional_mx:
-            score += 25
-            scoring_details['mx_base'] = 25
-            # Bonus for multiple MX records (redundancy)
-            if len(mx_result['records']) > 1:
-                bonus_points += 2
-                scoring_details['mx_bonus'] = 2
-            else:
-                scoring_details['mx_bonus'] = 0
+        score += 25
+        scoring_details['mx_base'] = 25
+        # Bonus for multiple MX records (redundancy)
+        if len(mx_result['records']) > 1:
+            bonus_points += 2
+            scoring_details['mx_bonus'] = 2
         else:
-            # MX records exist but are not functional
-            scoring_details['mx_base'] = 0
             scoring_details['mx_bonus'] = 0
     else:
         scoring_details['mx_base'] = 0
@@ -343,8 +312,8 @@ def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
         scoring_details['spf_bonus'] = 0
     
     if dmarc_result['has_dmarc']:
-        score += 30
-        scoring_details['dmarc_base'] = 30
+        score += 25
+        scoring_details['dmarc_base'] = 25
         # Bonus for strong DMARC policy
         dmarc_bonus = 0
         for record in dmarc_result['records']:
@@ -361,8 +330,8 @@ def get_security_score(mx_result, spf_result, dmarc_result, dkim_result):
         scoring_details['dmarc_bonus'] = 0
     
     if dkim_result['has_dkim']:
-        score += 20
-        scoring_details['dkim_base'] = 20
+        score += 25
+        scoring_details['dkim_base'] = 25
         # Bonus for multiple DKIM selectors (only for non-Google providers)
         provider = detect_email_provider(mx_result, spf_result, dkim_result)
         if len(dkim_result['records']) > 1 and provider != "Google Workspace":
@@ -428,16 +397,6 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
             msg['List-Unsubscribe'] = '<https://astraverify.com/unsubscribe>'
             msg['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
         
-        # Determine frontend URL based on environment
-        if ENVIRONMENT == 'staging':
-            frontend_url = 'https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app'
-        elif ENVIRONMENT == 'local':
-            frontend_url = 'http://localhost:3000'
-        else:
-            frontend_url = 'https://astraverify.com'
-        
-        logger.info(f"Email environment: {ENVIRONMENT}, frontend URL: {frontend_url}")
-        
         # Get score and grade
         score = analysis_result.get('security_score', {}).get('score', 0)
         grade = get_score_grade(score)
@@ -486,7 +445,7 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
                 <div class="header">
                     <h1>🛡️ Domain Security Analysis</h1>
                     <div class="domain">
-                        <a href="{frontend_url}?domain={domain}" style="color: #007bff; text-decoration: none; font-weight: bold;">{domain}</a>
+                        <a href="https://astraverify.com?domain={domain}" style="color: #007bff; text-decoration: none; font-weight: bold;">{domain}</a>
                     </div>
                 </div>
                 
@@ -527,7 +486,7 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
                         Status: {dkim.get('status', 'Unknown')}
                     </div>
                     <div class="score-detail">
-                        Score: {scoring_details.get('dkim_base', 0)}/20
+                        Score: {scoring_details.get('dkim_base', 0)}/25
                     </div>
                     <div class="description">
                         {dkim.get('description', '')}
@@ -550,18 +509,12 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
         
         # Add issues section if there are problems
         issues = []
-        if not mx.get('enabled'):
-            issues.append("No MX records found - email delivery will fail")
         if not dkim.get('enabled'):
             issues.append("No DKIM records found - emails may be marked as spam")
         if not spf.get('enabled'):
             issues.append("No SPF record found - domain vulnerable to email spoofing")
         if not dmarc.get('enabled'):
             issues.append("No DMARC record found - email authentication not enforced")
-        
-        # Debug logging for issues generation
-        logger.info(f"Email issues generation - SPF enabled: {spf.get('enabled')}, DKIM enabled: {dkim.get('enabled')}, DMARC enabled: {dmarc.get('enabled')}")
-        logger.info(f"Generated issues: {issues}")
         
         if issues:
             html_content += """
@@ -591,15 +544,9 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
                 """
             html_content += "</div>"
         
-        # Add footer with current date and version
+        # Add footer with current date
+        from datetime import datetime
         current_date = datetime.now().strftime("%B %d, %Y")
-        
-        # Read version from VERSION file
-        try:
-            with open('VERSION', 'r') as f:
-                version = f.read().strip()
-        except:
-            version = "2025.08.15.01-Beta"
         
         html_content += f"""
                 <div class="footer">
@@ -608,9 +555,6 @@ def send_email_report(to_email, domain, analysis_result, opt_in_marketing):
                     <p style="font-size: 11px; color: #999; margin-top: 20px;">
                         This email was sent to {to_email} in response to a security analysis request for {domain}.<br>
                         If you did not request this report, please ignore this email.
-                    </p>
-                    <p style="font-size: 10px; color: #999; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px;">
-                        v{version} | © AstraVerify.com - a CloudGofer.com service
                     </p>
                 </div>
             </div>
@@ -760,7 +704,7 @@ def check_domain():
                     "spf_bonus": 0,
                     "dkim_base": 0,
                     "dkim_bonus": 0,
-                    "dmarc_base": 30,
+                    "dmarc_base": 25,
                     "dmarc_bonus": 0
                 }
             },
@@ -1037,7 +981,7 @@ def suggest_dkim_selectors():
 
 @app.route('/api/check/dkim', methods=['GET'])
 def complete_dkim_check():
-    """Complete DKIM check for progressive mode (optimized)"""
+    """Complete DKIM check for progressive mode"""
     domain = request.args.get('domain')
     custom_selector = request.args.get('dkim_selector')
     
@@ -1047,224 +991,33 @@ def complete_dkim_check():
     # Remove protocol if present
     domain = domain.replace('http://', '').replace('https://', '').replace('www.', '')
     
-    logger.info(f"Completing optimized DKIM analysis for domain: {domain}")
+    logger.info(f"Completing DKIM analysis for domain: {domain}")
     
-    # Get MX servers for provider-specific selector prioritization
-    mx_servers = []
-    try:
-        mx_result = get_mx_details(domain)
-        if mx_result.get('has_mx'):
-            mx_servers = [record['server'] for record in mx_result.get('records', [])]
-    except:
-        pass
-    
-    # Get optimized DKIM results
-    dkim_result = dkim_optimizer_sync.get_dkim_details_optimized(domain, custom_selector, mx_servers)
+    # Get DKIM results
+    dkim_result = get_dkim_details(domain, custom_selector)
     
     # Detect email provider based on DKIM
+    mx_result = get_mx_details(domain)
     spf_result = get_spf_details(domain)
     email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
     
     # Calculate security score
     dmarc_result = get_dmarc_details(domain)
+    security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
     
-    # Add debugging and error handling for security score calculation
-    try:
-        logger.info(f"Calculating security score for {domain}")
-        logger.info(f"MX result: {mx_result}")
-        logger.info(f"SPF result: {spf_result}")
-        logger.info(f"DMARC result: {dmarc_result}")
-        logger.info(f"DKIM result: {dkim_result}")
-        
-        security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
-        logger.info(f"Security score calculated: {security_score}")
-    except Exception as e:
-        logger.error(f"Error calculating security score for {domain}: {e}")
-        # Provide a fallback security score
-        security_score = {
-            'score': 0,
-            'grade': 'F',
-            'status': 'Error',
-            'max_score': 100,
-            'base_score': 0,
-            'bonus_points': 0,
-            'max_bonus': 10,
-            'scoring_details': {
-                'mx_base': 0,
-                'mx_bonus': 0,
-                'spf_base': 0,
-                'spf_bonus': 0,
-                'dmarc_base': 0,
-                'dmarc_bonus': 0,
-                'dkim_base': 0,
-                'dkim_bonus': 0
-            }
-        }
-    
-    # Generate recommendations
-    recommendations = []
-    
-    try:
-        # Generate enhanced recommendations based on email provider
-        if not mx_result['has_mx']:
-            recommendations.append({
-                "type": "critical",
-                "title": "Add MX Records",
-                "description": "MX records are essential for email delivery. Contact your DNS provider to add MX records."
-            })
-        elif len(mx_result['records']) == 1:
-            recommendations.append({
-                "type": "info",
-                "title": "Consider Multiple MX Records",
-                "description": "Adding secondary MX records improves email delivery reliability and redundancy."
-            })
-        
-        if not spf_result['has_spf']:
-            if email_provider == "Google Workspace":
-                recommendations.append({
-                    "type": "important",
-                    "title": "Add SPF Record",
-                    "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:_spf.google.com ~all' for Google Workspace."
-                })
-            elif email_provider == "Microsoft 365":
-                recommendations.append({
-                    "type": "important",
-                    "title": "Add SPF Record",
-                    "description": "SPF records help prevent email spoofing. Add a TXT record with 'v=spf1 include:spf.protection.outlook.com ~all' for Microsoft 365."
-                })
-            else:
-                recommendations.append({
-                    "type": "important",
-                    "title": "Add SPF Record",
-                    "description": "SPF records help prevent email spoofing. Contact your email service provider for the correct SPF record."
-                })
-        elif any('~all' in r['record'] for r in spf_result['records']):
-            recommendations.append({
-                "type": "info",
-                "title": "Strengthen SPF Policy",
-                "description": "Consider changing '~all' to '-all' for stronger spoofing protection."
-            })
-        
-        if not dmarc_result['has_dmarc']:
-            recommendations.append({
-                "type": "important",
-                "title": "Add DMARC Record",
-                "description": "DMARC records provide email authentication reporting. Add a TXT record at _dmarc.yourdomain.com with 'v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com'"
-            })
-        elif any('p=none' in r['record'] for r in dmarc_result['records']):
-            recommendations.append({
-                "type": "info",
-                "title": "Strengthen DMARC Policy",
-                "description": "Consider changing 'p=none' to 'p=quarantine' or 'p=reject' for better protection."
-            })
-        
-        if not dkim_result['has_dkim']:
-            recommendations.append({
-                "type": "info",
-                "title": "Consider DKIM",
-                "description": "DKIM provides email authentication. This is typically configured by your email service provider."
-            })
-        elif len(dkim_result['records']) == 1:
-            # Only recommend multiple DKIM selectors for non-Google providers
-            if email_provider != "Google Workspace":
-                recommendations.append({
-                    "type": "info",
-                    "title": "Consider Multiple DKIM Selectors",
-                    "description": "Multiple DKIM selectors provide better authentication diversity and security."
-                })
-            else:
-                recommendations.append({
-                    "type": "info",
-                    "title": "DKIM Configuration Complete",
-                    "description": "Google Workspace uses a single DKIM selector which is the standard configuration."
-                })
-    except Exception as e:
-        recommendations = []
-    
-    # Remove internal timing info
-    dkim_response = {
-        "enabled": dkim_result['has_dkim'],
-        "status": dkim_result['status'],
-        "description": dkim_result['description'],
-        "records": dkim_result['records'],
-        "selectors_checked": dkim_result.get('selectors_checked', 0)
-    }
-    
-    # Add performance info in development
-    if ENVIRONMENT == 'development' and 'check_time' in dkim_result:
-        dkim_response['check_time'] = dkim_result['check_time']
-    
-    # Compile complete results for storage
-    complete_results = {
+    return jsonify({
         "domain": domain,
-        "analysis_timestamp": None,  # Will be set by frontend
-        "security_score": security_score,
-        "email_provider": email_provider,
-        "mx": {
-            "enabled": mx_result['has_mx'],
-            "status": mx_result['status'],
-            "description": mx_result['description'],
-            "records": mx_result['records']
-        },
-        "spf": {
-            "enabled": spf_result['has_spf'],
-            "status": spf_result['status'],
-            "description": spf_result['description'],
-            "records": spf_result['records']
-        },
         "dkim": {
             "enabled": dkim_result['has_dkim'],
             "status": dkim_result['status'],
             "description": dkim_result['description'],
-            "records": dkim_result['records']
-        },
-        "dmarc": {
-            "enabled": dmarc_result['has_dmarc'],
-            "status": dmarc_result['status'],
-            "description": dmarc_result['description'],
-            "records": dmarc_result['records']
-        },
-        "recommendations": recommendations
-    }
-    
-    # Store analysis results in Firestore
-    try:
-        firestore_manager.store_analysis(domain, complete_results)
-        logger.info(f"Progressive analysis stored in Firestore for {domain}")
-    except Exception as e:
-        logger.warning(f"Failed to store progressive analysis in Firestore: {e}")
-    
-    # Add debugging for response
-    response_data = {
-        "domain": domain,
-        "dkim": dkim_response,
-        "mx": {
-            "enabled": mx_result['has_mx'],
-            "status": mx_result['status'],
-            "description": mx_result['description'],
-            "records": mx_result['records']
-        },
-        "spf": {
-            "enabled": spf_result['has_spf'],
-            "status": spf_result['status'],
-            "description": spf_result['description'],
-            "records": spf_result['records']
-        },
-        "dmarc": {
-            "enabled": dmarc_result['has_dmarc'],
-            "status": dmarc_result['status'],
-            "description": dmarc_result['description'],
-            "records": dmarc_result['records']
+            "records": dkim_result['records'],
+            "selectors_checked": dkim_result.get('selectors_checked', 0)
         },
         "email_provider": email_provider,
         "security_score": security_score,
-        "recommendations": recommendations,
         "completed": True
-    }
-    
-    logger.info(f"DKIM endpoint response for {domain}: {response_data}")
-    
-    return jsonify(response_data)
+    })
 
 @app.route('/api/analytics/recent', methods=['GET'])
 @require_admin_auth
@@ -1303,10 +1056,8 @@ def get_domain_history(domain):
 @require_admin_auth
 def get_analytics_statistics():
     """Get analytics statistics"""
-    logger.info("=== ANALYTICS STATISTICS ENDPOINT CALLED ===")
     try:
         stats = firestore_manager.get_statistics()
-        logger.info(f"Firestore stats: {stats}")
         return jsonify({
             "success": True,
             "data": stats
@@ -1318,30 +1069,8 @@ def get_analytics_statistics():
 @app.route('/api/public/statistics', methods=['GET'])
 def get_public_statistics():
     """Get public statistics (no admin required)"""
-    logger.info("=== STATISTICS ENDPOINT CALLED ===")
     try:
         stats = firestore_manager.get_statistics()
-        logger.info(f"Firestore stats: {stats}")
-        
-        # If Firestore fails or returns empty stats, try to load mock statistics
-        if not stats or stats.get('total_analyses', 0) == 0:
-            logger.info("Firestore returned empty stats, trying mock statistics...")
-            try:
-                import json
-                import os
-                mock_stats_file = os.path.join(os.path.dirname(__file__), 'mock_statistics.json')
-                logger.info(f"Looking for mock statistics file: {mock_stats_file}")
-                if os.path.exists(mock_stats_file):
-                    logger.info("Mock statistics file found, loading...")
-                    with open(mock_stats_file, 'r') as f:
-                        mock_stats = json.load(f)
-                    logger.info(f"Using mock statistics for local development: {mock_stats}")
-                    stats = mock_stats
-                else:
-                    logger.warning(f"Mock statistics file not found at: {mock_stats_file}")
-            except Exception as mock_error:
-                logger.warning(f"Failed to load mock statistics: {mock_error}")
-        
         # Return only basic stats for public consumption
         public_stats = {
             "total_analyses": stats.get('total_analyses', 0),
@@ -1349,7 +1078,6 @@ def get_public_statistics():
             "average_security_score": stats.get('average_security_score', 0),
             "email_provider_distribution": stats.get('email_provider_distribution', {})
         }
-        logger.info(f"Final public stats: {public_stats}")
         return jsonify({
             "success": True,
             "data": public_stats
@@ -1357,35 +1085,6 @@ def get_public_statistics():
     except Exception as e:
         logger.error(f"Failed to get public statistics: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/test-mock-stats', methods=['GET'])
-def test_mock_stats():
-    """Test mock statistics loading"""
-    try:
-        import json
-        import os
-        mock_stats_file = os.path.join(os.path.dirname(__file__), 'mock_statistics.json')
-        
-        if os.path.exists(mock_stats_file):
-            with open(mock_stats_file, 'r') as f:
-                mock_stats = json.load(f)
-            return jsonify({
-                "success": True,
-                "message": "Mock statistics loaded successfully",
-                "file_path": mock_stats_file,
-                "data": mock_stats
-            })
-        else:
-            return jsonify({
-                "success": False,
-                "message": "Mock statistics file not found",
-                "file_path": mock_stats_file
-            })
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
 
 @app.route('/api/test-email', methods=['GET'])
 def test_email_config():
@@ -1458,13 +1157,12 @@ def send_email_report_endpoint():
         if not email or not domain or not analysis_result:
             return jsonify({"success": False, "error": "Missing required fields"}), 400
         
-        # Store email report in Firestore first
+        # Store email report in Firestore
         try:
             firestore_manager.store_email_report(email, domain, analysis_result, opt_in_marketing, timestamp)
-            logger.info(f"Email report stored in Firestore for {domain} to {email}")
+            logger.info(f"Email report stored for {domain} to {email}")
         except Exception as e:
-            logger.error(f"Failed to store email report in Firestore: {e}")
-            # Continue with email sending even if Firestore storage fails
+            logger.warning(f"Failed to store email report: {e}")
         
         # Send actual email
         if EMAIL_PASSWORD:
@@ -1472,9 +1170,7 @@ def send_email_report_endpoint():
             if email_sent:
                 return jsonify({
                     "success": True,
-                    "message": "Email report sent successfully",
-                    "email_sent": True,
-                    "email_configured": True
+                    "message": "Email report sent successfully"
                 })
             else:
                 return jsonify({
@@ -1482,12 +1178,11 @@ def send_email_report_endpoint():
                     "error": "Failed to send email"
                 }), 500
         else:
-            # If no email password configured, return error
+            # If no email password configured, just return success
             return jsonify({
-                "success": False,
-                "error": "Email sending is not configured on this server",
-                "email_configured": False
-            }), 503
+                "success": True,
+                "message": "Email report queued successfully (email sending not configured)"
+            })
         
     except Exception as e:
         logger.error(f"Failed to process email report: {e}")

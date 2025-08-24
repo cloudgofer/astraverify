@@ -18,13 +18,6 @@ from enhanced_dkim_scanner import enhanced_dkim_scanner
 from admin_api import create_admin_routes
 from admin_ui import create_admin_ui_routes
 
-# Import enhanced error handling
-from error_handler import (
-    error_handler, retry_on_failure, safe_dns_resolve, 
-    safe_http_request, create_error_response, health_check_enhanced,
-    dns_circuit_breaker, network_circuit_breaker, database_circuit_breaker
-)
-
 # Configure DNS resolver for better reliability
 dns.resolver.default_resolver = dns.resolver.Resolver(configure=True)
 
@@ -133,24 +126,17 @@ def validate_domain(domain):
     
     return True, domain
 
-@retry_on_failure(max_retries=3, backoff_factor=2, timeout=10, operation_type='dns')
 def get_mx_details(domain):
-    """Get detailed MX record information with enhanced error handling"""
+    """Get detailed MX record information"""
     try:
-        # Use circuit breaker for DNS operations
-        def _resolve_mx():
-            mx_records = dns.resolver.resolve(domain, 'MX')
-            records = []
-            for mx in mx_records:
-                records.append({
-                    'priority': mx.preference,
-                    'server': str(mx.exchange),
-                    'valid': True
-                })
-            return records
-        
-        records = dns_circuit_breaker.call(_resolve_mx)
-        
+        mx_records = dns.resolver.resolve(domain, 'MX')
+        records = []
+        for mx in mx_records:
+            records.append({
+                'priority': mx.preference,
+                'server': str(mx.exchange),
+                'valid': True
+            })
         return {
             'has_mx': True,
             'records': records,
@@ -159,26 +145,25 @@ def get_mx_details(domain):
         }
     except Exception as e:
         logger.warning(f"MX check failed for {domain}: {str(e)}")
-        return error_handler.handle_dns_error(domain, e)
+        return {
+            'has_mx': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No MX records found'
+        }
 
-@retry_on_failure(max_retries=3, backoff_factor=2, timeout=10, operation_type='dns')
 def get_spf_details(domain):
-    """Get SPF record information with enhanced error handling"""
+    """Get SPF record information"""
     try:
-        # Use circuit breaker for DNS operations
-        def _resolve_spf():
-            spf_records = dns.resolver.resolve(domain, 'TXT')
-            records = []
-            for record in spf_records:
-                record_text = record.to_text().strip('"')
-                if record_text.startswith('v=spf1'):
-                    records.append({
-                        'record': record_text,
-                        'valid': True
-                    })
-            return records
-        
-        records = dns_circuit_breaker.call(_resolve_spf)
+        spf_records = dns.resolver.resolve(domain, 'TXT')
+        records = []
+        for record in spf_records:
+            record_text = record.to_text().strip('"')
+            if record_text.startswith('v=spf1'):
+                records.append({
+                    'record': record_text,
+                    'valid': True
+                })
         
         if records:
             return {
@@ -196,27 +181,26 @@ def get_spf_details(domain):
             }
     except Exception as e:
         logger.warning(f"SPF check failed for {domain}: {str(e)}")
-        return error_handler.handle_dns_error(domain, e)
+        return {
+            'has_spf': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No SPF records found'
+        }
 
-@retry_on_failure(max_retries=3, backoff_factor=2, timeout=10, operation_type='dns')
 def get_dmarc_details(domain):
-    """Get DMARC record information with enhanced error handling"""
+    """Get DMARC record information"""
     try:
-        # Use circuit breaker for DNS operations
-        def _resolve_dmarc():
-            dmarc_domain = f"_dmarc.{domain}"
-            dmarc_records = dns.resolver.resolve(dmarc_domain, 'TXT')
-            records = []
-            for record in dmarc_records:
-                record_text = record.to_text().strip('"')
-                if record_text.startswith('v=DMARC1'):
-                    records.append({
-                        'record': record_text,
-                        'valid': True
-                    })
-            return records
-        
-        records = dns_circuit_breaker.call(_resolve_dmarc)
+        dmarc_domain = f"_dmarc.{domain}"
+        dmarc_records = dns.resolver.resolve(dmarc_domain, 'TXT')
+        records = []
+        for record in dmarc_records:
+            record_text = record.to_text().strip('"')
+            if record_text.startswith('v=DMARC1'):
+                records.append({
+                    'record': record_text,
+                    'valid': True
+                })
         
         if records:
             return {
@@ -234,7 +218,12 @@ def get_dmarc_details(domain):
             }
     except Exception as e:
         logger.warning(f"DMARC check failed for {domain}: {str(e)}")
-        return error_handler.handle_dns_error(domain, e)
+        return {
+            'has_dmarc': False,
+            'records': [],
+            'status': 'Missing',
+            'description': 'No DMARC records found'
+        }
 
 def get_dkim_details_enhanced(domain, custom_selector=None):
     """Enhanced DKIM check using the new selector management system"""
@@ -401,140 +390,37 @@ def get_score_grade(score):
 # Main domain checking endpoint with enhanced DKIM
 @app.route('/api/check', methods=['GET'])
 def check_domain():
-    """Main domain checking endpoint with enhanced DKIM scanning and error handling"""
-    try:
-        domain = request.args.get('domain')
-        custom_selector = request.args.get('dkim_selector')
-        progressive = request.args.get('progressive', 'false').lower() == 'true'
+    """Main domain checking endpoint with enhanced DKIM scanning"""
+    domain = request.args.get('domain')
+    custom_selector = request.args.get('dkim_selector')
+    progressive = request.args.get('progressive', 'false').lower() == 'true'
+    
+    if not domain:
+        return jsonify({"error": "Domain parameter is required"}), 400
+    
+    # Validate domain
+    is_valid, validation_result = validate_domain(domain)
+    if not is_valid:
+        return jsonify({"error": validation_result}), 400
+    
+    domain = validation_result  # Use cleaned domain
+    
+    logger.info(f"Starting enhanced analysis for domain: {domain}")
+    if custom_selector:
+        logger.info(f"Using custom DKIM selector: {custom_selector}")
+    
+    # Get detailed results for each check
+    mx_result = get_mx_details(domain)
+    spf_result = get_spf_details(domain)
+    dmarc_result = get_dmarc_details(domain)
+    
+    if progressive:
+        # Progressive mode - return early results without DKIM
+        logger.info(f"Progressive mode: returning early results for {domain}")
         
-        if not domain:
-            return create_error_response("Domain parameter is required", 400, "ValidationError")
-        
-        # Validate domain
-        is_valid, validation_result = validate_domain(domain)
-        if not is_valid:
-            return create_error_response(validation_result, 400, "ValidationError")
-        
-        domain = validation_result  # Use cleaned domain
-        
-        logger.info(f"Starting enhanced analysis for domain: {domain}")
-        if custom_selector:
-            logger.info(f"Using custom DKIM selector: {custom_selector}")
-        
-        # Get detailed results for each check with error handling
-        try:
-            mx_result = get_mx_details(domain)
-        except Exception as e:
-            logger.error(f"MX check failed for {domain}: {e}")
-            mx_result = error_handler.handle_dns_error(domain, e)
-        
-        try:
-            spf_result = get_spf_details(domain)
-        except Exception as e:
-            logger.error(f"SPF check failed for {domain}: {e}")
-            spf_result = error_handler.handle_dns_error(domain, e)
-        
-        try:
-            dmarc_result = get_dmarc_details(domain)
-        except Exception as e:
-            logger.error(f"DMARC check failed for {domain}: {e}")
-            dmarc_result = error_handler.handle_dns_error(domain, e)
-        
-        if progressive:
-            # Progressive mode - return early results without DKIM
-            logger.info(f"Progressive mode: returning early results for {domain}")
-            
-            early_results = {
-                "domain": domain,
-                "analysis_timestamp": None,
-                "mx": {
-                    "enabled": mx_result['has_mx'],
-                    "status": mx_result['status'],
-                    "description": mx_result['description'],
-                    "records": mx_result['records']
-                },
-                "spf": {
-                    "enabled": spf_result['has_spf'],
-                    "status": spf_result['status'],
-                    "description": spf_result['description'],
-                    "records": spf_result['records']
-                },
-                "dmarc": {
-                    "enabled": dmarc_result['has_dmarc'],
-                    "status": dmarc_result['status'],
-                    "description": dmarc_result['description'],
-                    "records": dmarc_result['records']
-                },
-                "dkim": {
-                    "enabled": False,
-                    "status": "Pending",
-                    "description": "DKIM check will be performed separately",
-                    "records": []
-                },
-                "progressive": True
-            }
-            
-            return jsonify(early_results)
-        
-        # Full analysis including enhanced DKIM
-        try:
-            dkim_result = get_dkim_details_enhanced(domain, custom_selector)
-        except Exception as e:
-            logger.error(f"DKIM check failed for {domain}: {e}")
-            dkim_result = {
-                'has_dkim': False,
-                'records': [],
-                'status': 'Error',
-                'description': f'DKIM check failed: {str(e)}'
-            }
-        
-        # Detect email service provider
-        email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
-        
-        # Calculate security score
-        security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
-        
-        # Generate recommendations
-        recommendations = []
-        
-        if not mx_result['has_mx']:
-            recommendations.append({
-                "type": "critical",
-                "title": "Add MX Records",
-                "description": "MX records are essential for email delivery. Contact your DNS provider to add MX records."
-            })
-        
-        if not spf_result['has_spf']:
-            recommendations.append({
-                "type": "warning",
-                "title": "Add SPF Record",
-                "description": "SPF records prevent email spoofing. Add a SPF record to your DNS configuration."
-            })
-        
-        if not dkim_result['has_dkim']:
-            recommendations.append({
-                "type": "info",
-                "title": "Consider DKIM",
-                "description": "DKIM provides email authentication. This is typically configured by your email service provider."
-            })
-        
-        if not dmarc_result['has_dmarc']:
-            recommendations.append({
-                "type": "warning",
-                "title": "Add DMARC Record",
-                "description": "DMARC provides email authentication reporting and policy enforcement."
-            })
-        
-        # Add DKIM-specific recommendations
-        if dkim_result.get('recommendations'):
-            recommendations.extend(dkim_result['recommendations'])
-        
-        # Compile comprehensive results
-        results = {
+        early_results = {
             "domain": domain,
             "analysis_timestamp": None,
-            "security_score": security_score,
-            "email_provider": email_provider,
             "mx": {
                 "enabled": mx_result['has_mx'],
                 "status": mx_result['status'],
@@ -547,41 +433,111 @@ def check_domain():
                 "description": spf_result['description'],
                 "records": spf_result['records']
             },
-            "dkim": {
-                "enabled": dkim_result['has_dkim'],
-                "status": dkim_result['status'],
-                "description": dkim_result['description'],
-                "records": dkim_result['records'],
-                "selector_analytics": dkim_result.get('selector_analytics', {})
-            },
             "dmarc": {
                 "enabled": dmarc_result['has_dmarc'],
                 "status": dmarc_result['status'],
                 "description": dmarc_result['description'],
                 "records": dmarc_result['records']
             },
-            "recommendations": recommendations,
-            "progressive": False
+            "dkim": {
+                "enabled": False,
+                "status": "Pending",
+                "description": "DKIM check will be performed separately",
+                "records": []
+            },
+            "progressive": True
         }
         
-        # Store analysis results in Firestore with error handling
-        try:
-            firestore_manager.store_analysis(domain, results)
-            logger.info(f"Analysis stored in Firestore for {domain}")
-        except Exception as e:
-            logger.warning(f"Failed to store analysis in Firestore: {e}")
-            # Continue execution even if storage fails
-        
-        logger.info(f"Enhanced analysis completed for {domain}. Security score: {security_score['score']}, Provider: {email_provider}")
-        return jsonify(results)
-        
+        return jsonify(early_results)
+    
+    # Full analysis including enhanced DKIM
+    dkim_result = get_dkim_details_enhanced(domain, custom_selector)
+    
+    # Detect email service provider
+    email_provider = detect_email_provider(mx_result, spf_result, dkim_result)
+    
+    # Calculate security score
+    security_score = get_security_score(mx_result, spf_result, dmarc_result, dkim_result)
+    
+    # Generate recommendations
+    recommendations = []
+    
+    if not mx_result['has_mx']:
+        recommendations.append({
+            "type": "critical",
+            "title": "Add MX Records",
+            "description": "MX records are essential for email delivery. Contact your DNS provider to add MX records."
+        })
+    
+    if not spf_result['has_spf']:
+        recommendations.append({
+            "type": "warning",
+            "title": "Add SPF Record",
+            "description": "SPF records prevent email spoofing. Add a SPF record to your DNS configuration."
+        })
+    
+    if not dkim_result['has_dkim']:
+        recommendations.append({
+            "type": "info",
+            "title": "Consider DKIM",
+            "description": "DKIM provides email authentication. This is typically configured by your email service provider."
+        })
+    
+    if not dmarc_result['has_dmarc']:
+        recommendations.append({
+            "type": "warning",
+            "title": "Add DMARC Record",
+            "description": "DMARC provides email authentication reporting and policy enforcement."
+        })
+    
+    # Add DKIM-specific recommendations
+    if dkim_result.get('recommendations'):
+        recommendations.extend(dkim_result['recommendations'])
+    
+    # Compile comprehensive results
+    results = {
+        "domain": domain,
+        "analysis_timestamp": None,
+        "security_score": security_score,
+        "email_provider": email_provider,
+        "mx": {
+            "enabled": mx_result['has_mx'],
+            "status": mx_result['status'],
+            "description": mx_result['description'],
+            "records": mx_result['records']
+        },
+        "spf": {
+            "enabled": spf_result['has_spf'],
+            "status": spf_result['status'],
+            "description": spf_result['description'],
+            "records": spf_result['records']
+        },
+        "dkim": {
+            "enabled": dkim_result['has_dkim'],
+            "status": dkim_result['status'],
+            "description": dkim_result['description'],
+            "records": dkim_result['records'],
+            "selector_analytics": dkim_result.get('selector_analytics', {})
+        },
+        "dmarc": {
+            "enabled": dmarc_result['has_dmarc'],
+            "status": dmarc_result['status'],
+            "description": dmarc_result['description'],
+            "records": dmarc_result['records']
+        },
+        "recommendations": recommendations,
+        "progressive": False
+    }
+    
+    # Store analysis results in Firestore
+    try:
+        firestore_manager.store_analysis(domain, results)
+        logger.info(f"Analysis stored in Firestore for {domain}")
     except Exception as e:
-        logger.error(f"Unexpected error in check_domain for {domain}: {e}")
-        return create_error_response(
-            f"Error analyzing domain: {str(e)}", 
-            500, 
-            "InternalError"
-        )
+        logger.warning(f"Failed to store analysis in Firestore: {e}")
+    
+    logger.info(f"Enhanced analysis completed for {domain}. Security score: {security_score['score']}, Provider: {email_provider}")
+    return jsonify(results)
 
 # Enhanced DKIM endpoint
 @app.route('/api/check/dkim', methods=['GET'])
@@ -675,92 +631,21 @@ def complete_dkim_check():
     logger.info(f"Enhanced DKIM endpoint response for {domain}")
     return jsonify(response_data)
 
-# Test endpoint
-@app.route('/api/test', methods=['GET'])
-def test_endpoint():
-    """Test endpoint"""
-    return jsonify({"message": "Test endpoint working", "status": "success"})
-
-# Simple test route for debugging
-@app.route('/api/debug', methods=['GET'])
-def debug_endpoint():
-    """Debug endpoint to test route registration"""
-    return jsonify({"message": "Debug endpoint working", "status": "success"})
-
-# Public statistics endpoint
-@app.route('/api/public/statistics', methods=['GET'])
-def get_public_statistics():
-    """Get public statistics (no admin required)"""
-    try:
-        logger.info("=== STATISTICS ENDPOINT CALLED ===")
-        
-        # Return default statistics immediately for now
-        default_stats = {
-            "total_domains_checked": 1250,
-            "domains_with_mx": 1180,
-            "domains_with_spf": 1050,
-            "domains_with_dkim": 890,
-            "domains_with_dmarc": 720,
-            "average_security_score": 78,
-            "top_providers": {
-                "Google Workspace": 450,
-                "Microsoft 365": 320,
-                "Other": 480
-            },
-            "recent_activity": {
-                "last_24_hours": 45,
-                "last_7_days": 280,
-                "last_30_days": 1250
-            }
-        }
-        
-        logger.info(f"Returning default statistics: {default_stats}")
-        return jsonify({
-            "success": True,
-            "data": default_stats
-        })
-        
-    except Exception as e:
-        logger.error(f"Failed to get public statistics: {e}")
-        # Return default statistics on error
-        error_stats = {
-            "total_domains_checked": 1250,
-            "domains_with_mx": 1180,
-            "domains_with_spf": 1050,
-            "domains_with_dkim": 890,
-            "domains_with_dmarc": 720,
-            "average_security_score": 78,
-            "top_providers": {
-                "Google Workspace": 450,
-                "Microsoft 365": 320,
-                "Other": 480
-            },
-            "recent_activity": {
-                "last_24_hours": 45,
-                "last_7_days": 280,
-                "last_30_days": 1250
-            }
-        }
-        return jsonify({
-            "success": True,
-            "data": error_stats
-        })
 # Health check endpoint
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Enhanced health check endpoint with comprehensive system status"""
-    try:
-        health_status = health_check_enhanced()
-        return jsonify(health_status)
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return create_error_response(
-            "Health check failed", 
-            503, 
-            "HealthCheckError"
-        )
-
-
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "environment": ENVIRONMENT,
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "2.0.0",
+        "features": {
+            "enhanced_dkim": True,
+            "selector_management": True,
+            "admin_interface": True
+        }
+    })
 
 # Root endpoint
 @app.route('/', methods=['GET'])
@@ -772,7 +657,6 @@ def root():
         "endpoints": {
             "health": "/api/health",
             "check_domain": "/api/check?domain=example.com",
-            "statistics": "/api/public/statistics",
             "admin": "/admin",
             "admin_ui": "/admin/ui/login"
         }

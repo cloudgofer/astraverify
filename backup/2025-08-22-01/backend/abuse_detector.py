@@ -255,12 +255,3 @@ class AbuseDetector:
             'risk_level': self._get_risk_level(total_score),
             'recent_activity': recent_activity
         }
-    
-    def get_ip_score(self, ip: str) -> int:
-        """Get current abuse score for an IP"""
-        return self.ip_scores.get(ip, 0)
-    
-    def get_risk_level(self, ip: str) -> str:
-        """Get risk level for an IP"""
-        score = self.get_ip_score(ip)
-        return self._get_risk_level(score)

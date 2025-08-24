@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import config from './config';
+import config from './config.local';
 import { getFooterText } from './version';
 import './App.css';
 
@@ -127,6 +127,9 @@ function App() {
           const newResult = {
             ...prevResult,
             dkim: dkimData.dkim,
+            mx: dkimData.mx || prevResult.mx,
+            spf: dkimData.spf || prevResult.spf,
+            dmarc: dkimData.dmarc || prevResult.dmarc,
             email_provider: dkimData.email_provider,
             security_score: dkimData.security_score,
             recommendations: dkimData.recommendations || [],
@@ -135,6 +138,7 @@ function App() {
           };
           console.log('🔍 Updated result:', newResult);
           console.log('🔍 Final recommendations:', newResult.recommendations);
+          console.log('🔍 MX data from DKIM completion:', newResult.mx);
           return newResult;
         });
         

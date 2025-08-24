@@ -1,5 +1,5 @@
 const config = {
-  // Backend API URL - PRODUCTION environment
+  // Backend API URL - STAGING environment
   API_BASE_URL: 'https://astraverify-backend-1098627686587.us-central1.run.app',
 
   // API endpoints

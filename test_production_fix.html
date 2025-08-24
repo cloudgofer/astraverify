@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Fix Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🚀 Production Fix Verification</h1>
+    
+    <div class="test-section info">
+        <h3>Test Status</h3>
+        <p>This page tests the production environment to verify the "Failed to fetch" error has been resolved.</p>
+    </div>
+
+    <div class="test-section">
+        <h3>Backend Connectivity Test</h3>
+        <button onclick="testBackend()">Test Backend API</button>
+        <div id="backend-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Frontend Configuration Test</h3>
+        <button onclick="testFrontendConfig()">Test Frontend Config</button>
+        <div id="frontend-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Domain Analysis Test</h3>
+        <button onclick="testDomainAnalysis()">Test Domain Analysis</button>
+        <div id="analysis-result"></div>
+    </div>
+
+    <script>
+        async function testBackend() {
+            const resultDiv = document.getElementById('backend-result');
+            resultDiv.innerHTML = '<div class="info">Testing backend connectivity...</div>';
+            
+            try {
+                const response = await fetch('https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/check?domain=example.com');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Backend API Working</h4>
+                            <p>Status: ${response.status}</p>
+                            <p>Domain: ${data.domain}</p>
+                            <p>Security Score: ${data.security_score?.score || 'N/A'}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Backend API Error</h4>
+                            <p>Status: ${response.status}</p>
+                            <p>Error: ${await response.text()}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Backend Connection Failed</h4>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testFrontendConfig() {
+            const resultDiv = document.getElementById('frontend-result');
+            resultDiv.innerHTML = '<div class="info">Testing frontend configuration...</div>';
+            
+            try {
+                const response = await fetch('https://astraverify-frontend-ml2mhibdvq-uc.a.run.app');
+                const html = await response.text();
+                
+                if (html.includes('astraverify-backend-ml2mhibdvq-uc.a.run.app')) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Frontend Configuration Correct</h4>
+                            <p>Frontend is configured to use production backend</p>
+                            <p>Backend URL: astraverify-backend-ml2mhibdvq-uc.a.run.app</p>
+                        </div>
+                    `;
+                } else if (html.includes('localhost:8080')) {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Frontend Configuration Error</h4>
+                            <p>Frontend is still configured to use localhost</p>
+                            <p>This would cause "Failed to fetch" errors</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="info">
+                            <h4>⚠️ Configuration Status Unknown</h4>
+                            <p>Could not determine backend configuration from HTML</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Frontend Test Failed</h4>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testDomainAnalysis() {
+            const resultDiv = document.getElementById('analysis-result');
+            resultDiv.innerHTML = '<div class="info">Testing domain analysis through frontend...</div>';
+            
+            try {
+                // Simulate the frontend making a request to the backend
+                const backendUrl = 'https://astraverify-backend-ml2mhibdvq-uc.a.run.app/api/check?domain=google.com&progressive=true';
+                console.log('Testing domain analysis with URL:', backendUrl);
+                
+                const response = await fetch(backendUrl);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Domain Analysis Working</h4>
+                            <p>Domain: ${data.domain}</p>
+                            <p>Progressive: ${data.progressive}</p>
+                            <p>Security Score: ${data.security_score?.score || 'N/A'}</p>
+                            <p>DKIM Status: ${data.dkim?.status || 'N/A'}</p>
+                            <p>SPF Status: ${data.spf?.status || 'N/A'}</p>
+                            <p>DMARC Status: ${data.dmarc?.status || 'N/A'}</p>
+                            <p>MX Status: ${data.mx?.status || 'N/A'}</p>
+                        </div>
+                    `;
+                } else {
+                    const errorText = await response.text();
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Domain Analysis Error</h4>
+                            <p>Status: ${response.status}</p>
+                            <p>Error: ${errorText}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Domain Analysis Failed</h4>
+                        <p>Error: ${error.message}</p>
+                        <p>This indicates the "Failed to fetch" issue may still exist</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-run tests on page load
+        window.onload = function() {
+            setTimeout(testBackend, 1000);
+            setTimeout(testFrontendConfig, 2000);
+            setTimeout(testDomainAnalysis, 3000);
+        };
+    </script>
+</body>
+</html>

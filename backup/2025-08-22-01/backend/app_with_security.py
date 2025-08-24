@@ -26,9 +26,6 @@ from config_loader import ConfigLoader
 from scoring_engine import ScoringEngine
 from recommendation_engine import RecommendationEngine
 
-# Import admin UI
-from admin_ui import create_admin_ui_routes
-
 # Configure DNS resolver for better reliability
 dns.resolver.default_resolver = dns.resolver.Resolver(configure=True)
 
@@ -503,52 +500,6 @@ def admin_unblock_ip(ip):
     except Exception as e:
         logger.error(f"Unblock IP error: {e}")
         return jsonify({"error": "Failed to unblock IP"}), 500
-
-@app.route('/api/admin/block-ip/<ip>', methods=['POST'])
-@require_admin_auth
-def admin_block_ip(ip):
-    """Admin endpoint to block an IP"""
-    try:
-        data = request.get_json()
-        reason = data.get('reason', 'Manual block by admin')
-        level = data.get('level', 'temporary')
-        
-        # Validate block level
-        valid_levels = ['temporary', 'extended', 'permanent']
-        if level not in valid_levels:
-            return jsonify({"error": f"Invalid block level. Must be one of: {', '.join(valid_levels)}"}), 400
-        
-        success = ip_blocker.block_ip(ip, reason, level)
-        return jsonify({
-            'success': success,
-            'message': f"IP {ip} {'blocked' if success else 'failed to block'} with level {level}"
-        })
-    except Exception as e:
-        logger.error(f"Block IP error: {e}")
-        return jsonify({"error": "Failed to block IP"}), 500
-
-@app.route('/api/admin/ip-analytics/<ip>', methods=['GET'])
-@require_admin_auth
-def admin_ip_analytics(ip):
-    """Admin endpoint to get IP analytics"""
-    try:
-        # Get IP analytics from abuse detector
-        analytics = abuse_detector.get_ip_analytics(ip)
-        
-        # Get block info
-        block_info = ip_blocker.get_block_info(ip)
-        
-        return jsonify({
-            'ip': ip,
-            'analytics': analytics,
-            'abuse_score': abuse_detector.get_ip_score(ip),
-            'risk_level': abuse_detector.get_risk_level(ip),
-            'is_blocked': bool(block_info),
-            'block_info': block_info
-        })
-    except Exception as e:
-        logger.error(f"IP analytics error: {e}")
-        return jsonify({"error": "Failed to get IP analytics"}), 500
 
 @app.route('/api/admin/clear-all-blocks', methods=['POST'])
 @require_admin_auth
@@ -1826,9 +1777,6 @@ def email_report():
     except Exception as e:
         logger.error(f"Email report error: {e}")
         return jsonify({"error": "Internal server error"}), 500
-
-# Initialize admin UI routes
-create_admin_ui_routes(app)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
