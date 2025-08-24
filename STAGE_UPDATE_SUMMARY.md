@@ -85,6 +85,15 @@ curl -s "https://astraverify-backend-staging-ml2mhibdvq-uc.a.run.app/api/check?d
 - ✅ Checks all configuration files and deployment prerequisites
 - ✅ Ensures production environment stability
 
+### **Staging Environment Safeguards**
+- ✅ **Staging Validation Script**: `deploy/validate-staging-environment.sh`
+- ✅ **Staging Pre-commit Hook**: `.git/hooks/pre-commit-staging`
+- ✅ **Branch Validation**: Ensures staging uses correct monthly branches
+- ✅ **Configuration Validation**: Prevents staging from using production configs
+- ✅ **Data Store Isolation**: Validates staging-specific collections
+- ✅ **URL Validation**: Ensures staging uses staging-specific URLs
+- ✅ **Automated Deployment Validation**: Runs before every staging deployment
+
 ### **Environment-Specific Configurations**
 - ✅ **Production**: Uses `config.production.js` with "AstraVerify" title
 - ✅ **Staging**: Uses `config.staging.js` with "AstraVerify (Staging)" title
