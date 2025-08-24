@@ -71,6 +71,12 @@ http {
 }
 EOF
 
+# Build frontend for production environment
+print_status "Building frontend for production environment..."
+cd frontend
+./build-env.sh production
+cd ..
+
 # Build and deploy to Cloud Run
 print_status "Building and deploying frontend to Cloud Run..."
 gcloud builds submit --tag gcr.io/$PROJECT_ID/$SERVICE_NAME frontend/

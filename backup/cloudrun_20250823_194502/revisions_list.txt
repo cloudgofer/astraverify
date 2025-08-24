@@ -1,0 +1,7 @@
+   REVISION                       ACTIVE  SERVICE              DEPLOYED                 DEPLOYED BY
+[32m✔[39;0m  astraverify-backend-00066-jx4          astraverify-backend  2025-08-24 00:34:06 UTC  admin@cloudgofer.com
+[32m✔[39;0m  astraverify-backend-00065-nvz          astraverify-backend  2025-08-24 00:12:59 UTC  admin@cloudgofer.com
+[32m✔[39;0m  astraverify-backend-00064-8fs          astraverify-backend  2025-08-24 00:09:36 UTC  admin@cloudgofer.com
+[32m✔[39;0m  astraverify-backend-00063-7qj          astraverify-backend  2025-08-24 00:05:47 UTC  admin@cloudgofer.com
+[32m✔[39;0m  astraverify-backend-00062-5vd          astraverify-backend  2025-08-24 00:02:32 UTC  admin@cloudgofer.com
+[32m✔[39;0m  astraverify-backend-00058-cph  yes     astraverify-backend  2025-08-23 20:46:50 UTC  admin@cloudgofer.com

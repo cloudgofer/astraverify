@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# Exit on any error
+# Local development script with environment-specific configuration
+# This script builds and runs the application for local development
+
 set -e
 
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 print_status() {
@@ -22,97 +23,59 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-print_header() {
-    echo -e "${BLUE}================================${NC}"
-    echo -e "${BLUE}$1${NC}"
-    echo -e "${BLUE}================================${NC}"
-}
+print_status "Starting local development environment..."
 
-print_header "AstraVerify Local Development"
-
-# Check if we're in the right directory
-if [ ! -d "frontend" ] || [ ! -d "backend" ]; then
-    print_error "Please run this script from the project root directory"
-    exit 1
+# Check if backend is running
+if ! curl -s http://localhost:8080/api/health > /dev/null 2>&1; then
+    print_warning "Backend not running on localhost:8080"
+    print_status "Starting backend..."
+    ./start_backend_with_email.sh &
+    BACKEND_PID=$!
+    
+    # Wait for backend to start
+    print_status "Waiting for backend to start..."
+    for i in {1..30}; do
+        if curl -s http://localhost:8080/api/health > /dev/null 2>&1; then
+            print_status "Backend is running"
+            break
+        fi
+        sleep 1
+    done
+    
+    if [ $i -eq 30 ]; then
+        print_error "Backend failed to start"
+        exit 1
+    fi
+else
+    print_status "Backend is already running"
 fi
 
-# Function to cleanup on exit
+# Build frontend for local environment
+print_status "Building frontend for local environment..."
+cd frontend
+./build-env.sh local
+cd ..
+
+# Start frontend development server
+print_status "Starting frontend development server..."
+cd frontend
+npm start
+
+# Cleanup function
 cleanup() {
-    print_status "Shutting down services..."
-    if [ ! -z "$FRONTEND_PID" ]; then
-        kill $FRONTEND_PID 2>/dev/null || true
-    fi
+    print_status "Shutting down local development environment..."
     if [ ! -z "$BACKEND_PID" ]; then
         kill $BACKEND_PID 2>/dev/null || true
     fi
-    print_status "Services stopped."
     exit 0
 }
 
 # Set up signal handlers
 trap cleanup SIGINT SIGTERM
 
-print_status "Starting AstraVerify services locally..."
-
-# Start backend
-print_status "Starting backend server..."
-cd backend
-
-# Activate virtual environment
-if [ -d "venv" ]; then
-    source venv/bin/activate
-else
-    print_warning "Virtual environment not found. Creating one..."
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-fi
-
-# Set environment to local
-export ENVIRONMENT="local"
-
-# Set up email password for local development
-export EMAIL_PASSWORD="juek rown cptq zkpo"
-
-# Set up Google Cloud credentials for local development
-if [ ! -f ~/firebase-key.json ]; then
-    print_warning "Firebase service account key not found. Creating one..."
-    gcloud iam service-accounts keys create ~/firebase-key.json --iam-account=firebase-adminsdk-fbsvc@astraverify.iam.gserviceaccount.com
-fi
-export GOOGLE_APPLICATION_CREDENTIALS=~/firebase-key.json
-
-# Start backend in background
-ENVIRONMENT=local EMAIL_PASSWORD="juek rown cptq zkpo" GOOGLE_APPLICATION_CREDENTIALS=~/firebase-key.json python app.py &
-BACKEND_PID=$!
-print_status "Backend started with PID: $BACKEND_PID"
-
-cd ..
-
-# Wait a moment for backend to start
-sleep 2
-
-# Start frontend
-print_status "Starting frontend development server..."
-cd frontend
-
-# Install dependencies if needed
-if [ ! -d "node_modules" ]; then
-    print_status "Installing frontend dependencies..."
-    npm install
-fi
-
-# Start frontend in background
-npm start &
-FRONTEND_PID=$!
-print_status "Frontend started with PID: $FRONTEND_PID"
-
-cd ..
-
-print_status "Services are starting up..."
-print_status "Backend will be available at: http://localhost:8080"
-print_status "Frontend will be available at: http://localhost:3000"
-print_status ""
-print_status "Press Ctrl+C to stop all services"
-
-# Wait for both processes
+# Wait for user to stop
+print_status "Local development environment is running"
+print_status "Frontend: http://localhost:3000"
+print_status "Backend: http://localhost:8080"
+print_status "Press Ctrl+C to stop"
 wait 

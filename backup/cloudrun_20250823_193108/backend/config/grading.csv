@@ -1,0 +1,14 @@
+grade,min_score,description,color
+A+,95,Outstanding email security,#4CAF50
+A,90,Excellent email security,#4CAF50
+A-,85,Very good email security,#8BC34A
+B+,80,Good email security,#8BC34A
+B,75,Above average email security,#CDDC39
+B-,70,Average email security,#CDDC39
+C+,65,Below average email security,#FFC107
+C,60,Poor email security,#FFC107
+C-,55,Very poor email security,#FF9800
+D+,50,Extremely poor email security,#FF9800
+D,45,Critical security issues,#F44336
+D-,40,Severe security issues,#F44336
+F,0,No email security,#F44336

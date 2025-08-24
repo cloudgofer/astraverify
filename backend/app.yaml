@@ -1,0 +1,107 @@
+runtime: python39
+service: default
+
+env_variables:
+  ENVIRONMENT: "production"
+  ADMIN_API_KEY: "astraverify-admin-2024"
+  EMAIL_SENDER: "hi@astraverify.com"
+  EMAIL_SMTP_SERVER: "smtp.gmail.com"
+  EMAIL_SMTP_PORT: "587"
+  EMAIL_USERNAME: "hi@astraverify.com"
+
+# Enhanced scaling configuration for production reliability
+automatic_scaling:
+  target_cpu_utilization: 0.6
+  min_instances: 1
+  max_instances: 10
+  min_idle_instances: 1
+  max_idle_instances: 3
+  min_pending_latency: 30ms
+  max_pending_latency: 10s
+  max_concurrent_requests: 50
+
+# Resource allocation for production stability
+resources:
+  cpu: 1
+  memory_gb: 1
+  disk_size_gb: 10
+
+# Network configuration for reliability
+network:
+  instance_tag: "astraverify-backend"
+  forwarded_ports:
+    - 5001
+
+# Health checks for monitoring
+readiness_check:
+  app_start_timeout_sec: 300
+  check_interval_sec: 5
+  timeout_sec: 4
+  failure_threshold: 2
+  success_threshold: 2
+  path: "/api/health"
+
+liveness_check:
+  path: "/api/health"
+  check_interval_sec: 30
+  timeout_sec: 4
+  failure_threshold: 4
+  success_threshold: 2
+  initial_delay_sec: 300
+
+# Security headers
+handlers:
+  - url: /api/health
+    script: auto
+    secure: always
+    http_headers:
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+      X-XSS-Protection: 1; mode=block
+      Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+  - url: /api/.*
+    script: auto
+    secure: always
+    http_headers:
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+      X-XSS-Protection: 1; mode=block
+      Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+  - url: /admin/.*
+    script: auto
+    secure: always
+    http_headers:
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+      X-XSS-Protection: 1; mode=block
+      Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+  - url: /.*
+    script: auto
+    secure: always
+    http_headers:
+      X-Content-Type-Options: nosniff
+      X-Frame-Options: DENY
+      X-XSS-Protection: 1; mode=block
+      Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# Error handling
+error_handlers:
+  - error_code: over_quota
+    file: error_quota.html
+  - error_code: dos_api_denial
+    file: error_dos_denial.html
+  - error_code: timeout
+    file: error_timeout.html
+
+# Logging configuration
+inbound_services:
+  - warmup
+
+# Instance class for better performance
+instance_class: F1
+
+# Entry point
+entrypoint: gunicorn -b :$PORT -w 4 --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 app_enhanced_dkim:app

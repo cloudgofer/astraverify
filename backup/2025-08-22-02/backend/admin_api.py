@@ -1,0 +1,469 @@
+import os
+import logging
+import re
+import jwt
+import requests
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional, Tuple
+from flask import Flask, request, jsonify, g, redirect, url_for, session
+from functools import wraps
+from dotenv import load_dotenv
+from dkim_selector_manager import dkim_selector_manager
+from enhanced_dkim_scanner import enhanced_dkim_scanner
+
+# Load environment variables from .env file
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# Google OAuth Configuration
+GOOGLE_OAUTH_CONFIG = {
+    'client_id': os.environ.get('GOOGLE_OAUTH_CLIENT_ID', 'your-google-oauth-client-id.apps.googleusercontent.com'),
+    'client_secret': os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', 'your-google-oauth-client-secret'),
+    'redirect_uri': os.environ.get('GOOGLE_OAUTH_REDIRECT_URI', 'http://localhost:5001/admin/auth/callback'),
+    'scopes': [
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile'
+    ],
+    'authorized_domains': ['astraverify.com', 'cloudgofer.com']
+}
+
+# JWT Configuration
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRATION_HOURS = 8
+
+class AdminAuthorization:
+    """Admin authorization and authentication management"""
+    
+    def __init__(self):
+        self.authorized_domains = GOOGLE_OAUTH_CONFIG['authorized_domains']
+        self.admin_roles = {
+            'super_admin': ['hi@astraverify.com', 'admin@astraverify.com'],
+            'domain_admin': ['*@astraverify.com'],  # All astraverify.com users
+            'limited_admin': ['support@astraverify.com']
+        }
+    
+    def is_authorized(self, email: str) -> Tuple[bool, str]:
+        """Check if user is authorized for admin access"""
+        domain = email.split('@')[1]
+        
+        # Check domain authorization
+        if domain not in self.authorized_domains:
+            return False, "Unauthorized domain"
+        
+        # Check role-based authorization
+        for role, authorized_emails in self.admin_roles.items():
+            if email in authorized_emails:
+                return True, role
+            elif '*@' + domain in authorized_emails:
+                return True, role
+        
+        return False, "Insufficient permissions"
+    
+    def get_user_permissions(self, email: str) -> Dict[str, bool]:
+        """Get specific permissions for user"""
+        is_auth, role = self.is_authorized(email)
+        
+        if not is_auth:
+            return {}
+        
+        permissions = {
+            'super_admin': {
+                'can_manage_users': True,
+                'can_manage_domains': True,
+                'can_manage_selectors': True,
+                'can_view_analytics': True,
+                'can_manage_system': True,
+                'can_manage_brute_force': True
+            },
+            'domain_admin': {
+                'can_manage_users': False,
+                'can_manage_domains': True,
+                'can_manage_selectors': True,
+                'can_view_analytics': True,
+                'can_manage_system': False,
+                'can_manage_brute_force': True
+            },
+            'limited_admin': {
+                'can_manage_users': False,
+                'can_manage_domains': False,
+                'can_manage_selectors': True,
+                'can_view_analytics': False,
+                'can_manage_system': False,
+                'can_manage_brute_force': False
+            }
+        }
+        
+        return permissions.get(role, {})
+
+class AdminSessionManager:
+    """Admin session management with JWT"""
+    
+    def __init__(self):
+        self.secret_key = JWT_SECRET_KEY
+        self.algorithm = JWT_ALGORITHM
+        self.expiration_hours = JWT_EXPIRATION_HOURS
+    
+    def create_session(self, user_info: Dict[str, Any]) -> str:
+        """Create JWT session token for admin user"""
+        payload = {
+            'email': user_info['email'],
+            'name': user_info.get('name', ''),
+            'picture': user_info.get('picture', ''),
+            'role': user_info.get('role', 'domain_admin'),
+            'permissions': user_info.get('permissions', {}),
+            'exp': datetime.utcnow() + timedelta(hours=self.expiration_hours),
+            'iat': datetime.utcnow()
+        }
+        
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    def validate_session(self, token: str) -> Tuple[bool, Dict[str, Any]]:
+        """Validate JWT session token"""
+        try:
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            return True, payload
+        except jwt.ExpiredSignatureError:
+            return False, {"error": "Session expired"}
+        except jwt.InvalidTokenError:
+            return False, {"error": "Invalid token"}
+
+# Initialize admin components
+admin_auth = AdminAuthorization()
+session_manager = AdminSessionManager()
+
+def require_admin_auth(f):
+    """Decorator to require admin authentication"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check for token in Authorization header first, then cookies
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        else:
+            token = request.cookies.get('admin_token')
+        
+        if not token:
+            return jsonify({"error": "Authentication required"}), 401
+        
+        is_valid, payload = session_manager.validate_session(token)
+        
+        if not is_valid:
+            return jsonify({"error": "Invalid or expired session"}), 401
+        
+        # Add user info to request context
+        g.admin_user = payload
+        
+        return f(*args, **kwargs)
+    
+    return decorated_function
+
+def require_permission(permission: str):
+    """Decorator to require specific permission"""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not hasattr(g, 'admin_user'):
+                return jsonify({"error": "Authentication required"}), 401
+            
+            user_permissions = g.admin_user.get('permissions', {})
+            if not user_permissions.get(permission, False):
+                return jsonify({"error": "Insufficient permissions"}), 403
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+# Admin API Routes
+def create_admin_routes(app):
+    """Create admin API routes"""
+    
+    @app.route('/admin')
+    def admin_home():
+        """Admin home page - redirects to login if not authenticated"""
+        token = request.cookies.get('admin_token')
+        
+        if token:
+            is_valid, payload = session_manager.validate_session(token)
+            if is_valid:
+                return jsonify({
+                    "authenticated": True,
+                    "user": {
+                        "email": payload['email'],
+                        "name": payload['name'],
+                        "role": payload['role'],
+                        "permissions": payload['permissions']
+                    }
+                })
+        
+        return jsonify({"authenticated": False, "login_url": "/admin/auth/google"})
+    
+    @app.route('/admin/auth/google')
+    def admin_google_auth():
+        """Initiate Google OAuth flow"""
+        auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?" + \
+                   f"client_id={GOOGLE_OAUTH_CONFIG['client_id']}&" + \
+                   f"redirect_uri={GOOGLE_OAUTH_CONFIG['redirect_uri']}&" + \
+                   f"scope={' '.join(GOOGLE_OAUTH_CONFIG['scopes'])}&" + \
+                   f"response_type=code&" + \
+                   f"access_type=offline"
+        
+        return jsonify({"auth_url": auth_url})
+    
+    @app.route('/admin/auth/callback')
+    def admin_auth_callback():
+        """Handle Google OAuth callback"""
+        code = request.args.get('code')
+        
+        if not code:
+            return jsonify({"error": "No authorization code provided"}), 400
+        
+        try:
+            # Exchange code for tokens
+            token_response = requests.post('https://oauth2.googleapis.com/token', data={
+                'client_id': GOOGLE_OAUTH_CONFIG['client_id'],
+                'client_secret': GOOGLE_OAUTH_CONFIG['client_secret'],
+                'code': code,
+                'grant_type': 'authorization_code',
+                'redirect_uri': GOOGLE_OAUTH_CONFIG['redirect_uri']
+            })
+            
+            if token_response.status_code != 200:
+                return jsonify({"error": "Failed to exchange authorization code"}), 400
+            
+            tokens = token_response.json()
+            
+            # Get user info
+            user_response = requests.get('https://www.googleapis.com/oauth2/v2/userinfo', headers={
+                'Authorization': f"Bearer {tokens['access_token']}"
+            })
+            
+            if user_response.status_code != 200:
+                return jsonify({"error": "Failed to get user info"}), 400
+            
+            user_info = user_response.json()
+            
+            # Check authorization
+            is_authorized, role = admin_auth.is_authorized(user_info['email'])
+            
+            if not is_authorized:
+                return jsonify({"error": "Unauthorized domain or insufficient permissions"}), 403
+            
+            # Create session
+            user_info['role'] = role
+            user_info['permissions'] = admin_auth.get_user_permissions(user_info['email'])
+            
+            session_token = session_manager.create_session(user_info)
+            
+            response = jsonify({
+                "success": True,
+                "message": "Authentication successful",
+                "user": {
+                    "email": user_info['email'],
+                    "name": user_info['name'],
+                    "role": role,
+                    "permissions": user_info['permissions']
+                },
+                "token": session_token
+            })
+            
+            # Set the token as a cookie for server-side access
+            response.set_cookie('admin_token', session_token, max_age=8*60*60, httponly=False, samesite='Lax')
+            
+            # Redirect to login page with success and token
+            return redirect(f'/admin/ui/login?auth_result=success&token={session_token}')
+            
+        except Exception as e:
+            logger.error(f"Admin auth error: {e}")
+            return jsonify({"error": "Authentication failed"}), 500
+    
+    @app.route('/admin/logout')
+    def admin_logout():
+        """Admin logout"""
+        return jsonify({"success": True, "message": "Logged out successfully"})
+    
+    # DKIM Selector Management Routes
+    
+    @app.route('/admin/domains/<domain>/selectors', methods=['GET'])
+    @require_admin_auth
+    @require_permission('can_manage_selectors')
+    def get_domain_selectors(domain):
+        """Get all DKIM selectors for a domain"""
+        try:
+            summary = dkim_selector_manager.get_domain_selector_summary(domain)
+            return jsonify(summary)
+        except Exception as e:
+            logger.error(f"Failed to get selectors for {domain}: {e}")
+            return jsonify({"error": "Failed to get selectors"}), 500
+    
+    @app.route('/admin/domains/<domain>/selectors', methods=['POST'])
+    @require_admin_auth
+    @require_permission('can_manage_selectors')
+    def add_dkim_selector(domain):
+        """Add a new DKIM selector for a domain"""
+        try:
+            data = request.get_json()
+            selector = data.get('selector')
+            notes = data.get('notes', '')
+            priority = data.get('priority', 'medium')
+            
+            if not selector:
+                return jsonify({"error": "Selector is required"}), 400
+            
+            # Validate selector format
+            if not re.match(r'^[a-zA-Z0-9_-]+$', selector):
+                return jsonify({"error": "Invalid selector format"}), 400
+            
+            # Add selector
+            success = dkim_selector_manager.add_admin_selector(
+                domain=domain,
+                selector=selector,
+                notes=notes,
+                priority=priority,
+                added_by=g.admin_user['email']
+            )
+            
+            if success:
+                return jsonify({
+                    "success": True,
+                    "message": f"Selector '{selector}' added successfully"
+                })
+            else:
+                return jsonify({"error": "Failed to add selector"}), 500
+                
+        except Exception as e:
+            logger.error(f"Failed to add selector for {domain}: {e}")
+            return jsonify({"error": "Failed to add selector"}), 500
+    
+    @app.route('/admin/domains/<domain>/selectors/<selector>', methods=['DELETE'])
+    @require_admin_auth
+    @require_permission('can_manage_selectors')
+    def remove_dkim_selector(domain, selector):
+        """Remove a DKIM selector from a domain"""
+        try:
+            success = dkim_selector_manager.remove_admin_selector(domain, selector)
+            
+            if success:
+                return jsonify({
+                    "success": True,
+                    "message": f"Selector '{selector}' removed successfully"
+                })
+            else:
+                return jsonify({"error": "Failed to remove selector"}), 500
+                
+        except Exception as e:
+            logger.error(f"Failed to remove selector {selector} for {domain}: {e}")
+            return jsonify({"error": "Failed to remove selector"}), 500
+    
+    @app.route('/admin/domains/<domain>/selectors/<selector>/test', methods=['GET'])
+    @require_admin_auth
+    @require_permission('can_manage_selectors')
+    def test_dkim_selector(domain, selector):
+        """Test a specific DKIM selector"""
+        try:
+            test_result = dkim_selector_manager._test_selector(domain, selector)
+            return jsonify({
+                "domain": domain,
+                "selector": selector,
+                "test_result": test_result
+            })
+        except Exception as e:
+            logger.error(f"Failed to test selector {selector} for {domain}: {e}")
+            return jsonify({"error": "Failed to test selector"}), 500
+    
+    @app.route('/admin/domains/<domain>/scan', methods=['POST'])
+    @require_admin_auth
+    @require_permission('can_manage_selectors')
+    def scan_domain_dkim(domain):
+        """Perform comprehensive DKIM scan for a domain"""
+        try:
+            data = request.get_json() or {}
+            custom_selector = data.get('custom_selector')
+            
+            # Perform scan
+            scan_result = enhanced_dkim_scanner.scan_domain_dkim(domain, custom_selector)
+            
+            return jsonify({
+                "success": True,
+                "scan_result": scan_result
+            })
+            
+        except Exception as e:
+            logger.error(f"Failed to scan domain {domain}: {e}")
+            return jsonify({"error": "Failed to scan domain"}), 500
+    
+    # Brute Force Selector Management
+    
+    @app.route('/admin/brute-force-selectors', methods=['GET'])
+    @require_admin_auth
+    @require_permission('can_manage_brute_force')
+    def get_brute_force_selectors():
+        """Get current brute force selectors"""
+        try:
+            selectors = dkim_selector_manager.get_brute_force_selectors()
+            return jsonify({
+                "selectors": selectors,
+                "total": len(selectors)
+            })
+        except Exception as e:
+            logger.error(f"Failed to get brute force selectors: {e}")
+            return jsonify({"error": "Failed to get selectors"}), 500
+    
+    @app.route('/admin/brute-force-selectors', methods=['PUT'])
+    @require_admin_auth
+    @require_permission('can_manage_brute_force')
+    def update_brute_force_selectors():
+        """Update brute force selectors"""
+        try:
+            data = request.get_json()
+            selectors = data.get('selectors', [])
+            
+            if not isinstance(selectors, list):
+                return jsonify({"error": "Selectors must be a list"}), 400
+            
+            # Validate selectors
+            for selector in selectors:
+                if not re.match(r'^[a-zA-Z0-9_-]+$', selector):
+                    return jsonify({"error": f"Invalid selector format: {selector}"}), 400
+            
+            success = dkim_selector_manager.update_brute_force_selectors(selectors)
+            
+            if success:
+                return jsonify({
+                    "success": True,
+                    "message": f"Updated {len(selectors)} brute force selectors"
+                })
+            else:
+                return jsonify({"error": "Failed to update selectors"}), 500
+                
+        except Exception as e:
+            logger.error(f"Failed to update brute force selectors: {e}")
+            return jsonify({"error": "Failed to update selectors"}), 500
+    
+    # Analytics and Statistics
+    
+    @app.route('/admin/analytics/selectors', methods=['GET'])
+    @require_admin_auth
+    @require_permission('can_view_analytics')
+    def get_selector_analytics():
+        """Get selector analytics and statistics"""
+        try:
+            # This would be implemented to provide comprehensive analytics
+            # For now, return basic structure
+            return jsonify({
+                "total_domains_with_selectors": 0,
+                "total_admin_selectors": 0,
+                "total_discovered_selectors": 0,
+                "most_common_selectors": [],
+                "success_rate_by_source": {
+                    "admin": 0.0,
+                    "discovered": 0.0,
+                    "brute_force": 0.0
+                }
+            })
+        except Exception as e:
+            logger.error(f"Failed to get selector analytics: {e}")
+            return jsonify({"error": "Failed to get analytics"}), 500
+    
+    return app

@@ -1,6 +1,6 @@
 const config = {
-  // Backend API URL - STAGING environment
-  API_BASE_URL: 'https://astraverify-backend-1098627686587.us-central1.run.app',
+  // Backend API URL - DEFAULT environment (fallback)
+  API_BASE_URL: 'http://localhost:8080',
 
   // API endpoints
   ENDPOINTS: {
@@ -8,9 +8,9 @@ const config = {
   },
 
   // Application settings
-  APP_NAME: 'AstraVerify',
-  APP_DESCRIPTION: 'Email Domain Verification Tool'
+  APP_NAME: 'AstraVerify (Default)',
+  APP_DESCRIPTION: 'Email Domain Verification Tool - Default Environment'
 };
 
 export default config;
-// Config updated Thu Aug 21 10:24:47 CDT 2025
+// Default config - should be overridden by environment-specific configs

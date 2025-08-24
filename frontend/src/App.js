@@ -1,7 +1,25 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import config from './config.local';
 import { getFooterText } from './version';
 import './App.css';
+
+// Dynamic config loading based on environment
+let config;
+try {
+  // Check for environment-specific config
+  if (process.env.NODE_ENV === 'production') {
+    config = require('./config.production').default;
+  } else if (process.env.NODE_ENV === 'staging') {
+    config = require('./config.staging').default;
+  } else if (process.env.REACT_APP_ENV === 'local') {
+    config = require('./config.local').default;
+  } else {
+    // Default fallback
+    config = require('./config').default;
+  }
+} catch (error) {
+  console.warn('Failed to load environment-specific config, using default:', error);
+  config = require('./config').default;
+}
 
 // Global error handler to catch unhandled errors
 window.addEventListener('error', (event) => {

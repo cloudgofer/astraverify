@@ -56,20 +56,16 @@ gcloud services enable secretmanager.googleapis.com
 print_status "Preparing frontend..."
 cd frontend
 
-# Install dependencies
-print_status "Installing frontend dependencies..."
-npm install
-
-# Build frontend
-print_status "Building frontend..."
-npm run build
+# Build frontend for staging environment
+print_status "Building frontend for staging environment..."
+./build-env.sh staging
 
 if [ $? -ne 0 ]; then
     print_error "Frontend build failed"
     exit 1
 fi
 
-print_success "Frontend build completed"
+print_success "Frontend build completed for staging environment"
 
 # Deploy backend to Cloud Run (STAGING)
 print_status "Deploying backend to Cloud Run (STAGING)..."
@@ -105,31 +101,9 @@ else
     exit 1
 fi
 
-# Update frontend configuration with staging backend URL
-print_status "Updating frontend configuration with staging backend URL..."
+# Note: Frontend configuration is now handled by build-env.sh script
+# The staging config is already set up in src/config.staging.js
 cd ../frontend
-
-# Create staging config
-cat > src/config.staging.js << EOF
-const config = {
-  // Backend API URL - STAGING environment
-  API_BASE_URL: '$BACKEND_URL',
-
-  // API endpoints
-  ENDPOINTS: {
-    CHECK_DOMAIN: '/api/check'
-  },
-
-  // Application settings
-  APP_NAME: 'AstraVerify (Staging)',
-  APP_DESCRIPTION: 'Email Domain Verification Tool - Staging Environment'
-};
-
-export default config;
-EOF
-
-# Update main config to use staging
-cp src/config.staging.js src/config.js
 
 # Deploy frontend to Cloud Run (STAGING)
 print_status "Deploying frontend to Cloud Run (STAGING)..."
