@@ -36,6 +36,16 @@ if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" | grep -q
     exit 1
 fi
 
+# Run staging environment validation
+print_status "Running staging environment validation..."
+if ! ./deploy/validate-staging-environment.sh; then
+    print_error "Staging environment validation failed!"
+    print_error "Please fix all validation errors before deploying to staging"
+    exit 1
+fi
+
+print_success "Staging environment validation passed!"
+
 print_status "Starting STAGING deployment to GCP..."
 print_status "GCP Project ID: astraverify"
 print_status "Environment: STAGING"
