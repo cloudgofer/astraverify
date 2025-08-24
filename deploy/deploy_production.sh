@@ -51,6 +51,16 @@ print_status "Environment: PRODUCTION"
 print_status "Branch: main"
 print_status "Region: us-central1"
 
+# Run production deployment validation
+print_status "Running production deployment validation..."
+if ! ./deploy/validate-production-deployment.sh; then
+    print_error "Production deployment validation failed!"
+    print_error "Please fix all validation errors before deploying to production"
+    exit 1
+fi
+
+print_success "Production deployment validation passed!"
+
 # Confirm production deployment
 echo ""
 print_warning "⚠️  WARNING: This will deploy to PRODUCTION environment!"

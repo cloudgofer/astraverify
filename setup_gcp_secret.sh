@@ -26,7 +26,7 @@ echo "     --member='serviceAccount:astraverify@astraverify.iam.gserviceaccount.
 echo "     --role='roles/secretmanager.secretAccessor'"
 echo ""
 echo "3. ${BLUE}Deploy with secret support:${NC}"
-echo "   ./deploy/deploy_to_gcp.sh astraverify"
+echo "   ./deploy/deploy_production.sh (for production) or ./deploy/deploy_staging.sh (for staging)"
 echo ""
 
 echo -e "${YELLOW}Current Status:${NC}"

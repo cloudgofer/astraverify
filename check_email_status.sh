@@ -31,7 +31,7 @@ echo ""
 echo -e "${YELLOW}To enable email sending:${NC}"
 echo "1. Use password for hi@astraverify.com"
 echo "2. Run: export EMAIL_PASSWORD='your-password'"
-echo "3. Run: ./deploy/deploy_to_gcp.sh astraverify"
+echo "3. Run: ./deploy/deploy_production.sh (for production) or ./deploy/deploy_staging.sh (for staging)"
 echo ""
 
 echo -e "${BLUE}Test URL:${NC}"

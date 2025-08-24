@@ -37,7 +37,7 @@ echo "Run this command with your password:"
 echo -e "${BLUE}export EMAIL_PASSWORD='your-password-here'${NC}"
 echo ""
 echo "Then deploy:"
-echo -e "${BLUE}./deploy/deploy_to_gcp.sh astraverify${NC}"
+echo -e "${BLUE}./deploy/deploy_production.sh${NC} (for production) or ${BLUE}./deploy/deploy_staging.sh${NC} (for staging)"
 echo ""
 
 echo -e "${YELLOW}For Production (Recommended):${NC}"
