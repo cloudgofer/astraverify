@@ -27,7 +27,7 @@ Successfully updated the staging environment with all production configuration f
 - **Service URL**: https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app
 - **Revision**: astraverify-frontend-staging-00021-cgf
 - **Status**: ✅ Successfully deployed
-- **Configuration**: Using staging configuration with "AstraVerify (Staging)" title
+- **Configuration**: Using staging configuration with "AstraVerify (Staging)" title (updated by React app)
 
 ### **Backend Deployment**
 - **Service URL**: https://astraverify-backend-staging-ml2mhibdvq-uc.a.run.app
@@ -39,8 +39,9 @@ Successfully updated the staging environment with all production configuration f
 
 ### **Frontend Verification**
 ```bash
-curl -s "https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app" | grep -i "astraverify"
-# Result: Shows "AstraVerify - Email Domain Verification" (correct staging title)
+curl -s "https://astraverify-frontend-staging-ml2mhibdvq-uc.a.run.app" | grep -o '<title>[^<]*</title>'
+# Result: Shows "<title>AstraVerify</title>" (generic title in initial HTML)
+# Note: React app updates document title to "AstraVerify (Staging)" when loaded
 ```
 
 ### **Backend Statistics Verification**
@@ -119,7 +120,7 @@ a1cbf10 - Cleanup: Remove redundant deploy_to_gcp.sh and update references
 
 The staging environment has been successfully updated with all production fixes and safeguards. The staging environment now:
 
-- ✅ Shows correct "AstraVerify (Staging)" title
+- ✅ Shows correct "AstraVerify (Staging)" title (updated by React app)
 - ✅ Pulls statistics from staging data store
 - ✅ Has all production safeguards and validation
 - ✅ Uses proper backend configuration
